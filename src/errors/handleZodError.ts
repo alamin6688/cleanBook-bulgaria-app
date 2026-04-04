@@ -8,19 +8,21 @@ const handleZodError = (error: ZodError): IGenericErrorResponse => {
   const errors: IGenericErrorMessage[] = error.issues.map((issue) => {
     const lastPath = issue?.path[issue.path.length - 1];
     return {
-      path:
-        typeof lastPath === "symbol"
-          ? lastPath.toString()
-          : lastPath ?? "unknown",
+      path: typeof lastPath === "number" ? lastPath : String(lastPath),
       message: issue?.message,
     };
   });
 
   const statusCode = 400;
 
+  // Create a more meaningful main message by combining field names and messages
+  const message = error.issues
+    .map((issue) => issue.message)
+    .join(", ");
+
   return {
     statusCode,
-    message: "Validation Error",
+    message: message || "Validation Error",
     errorMessages: errors,
   };
 };

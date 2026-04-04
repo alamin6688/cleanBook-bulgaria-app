@@ -11,6 +11,9 @@ import prisma from "./lib/prisma";
 import { setupSwagger } from "./lib/swagger";
 import logger from "./utils/logger/logger";
 
+
+
+
 // Initialize app
 const app: Application = express();
 

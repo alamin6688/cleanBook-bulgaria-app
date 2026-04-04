@@ -2,7 +2,6 @@ import { Server } from "http";
 import app from "./app";
 import config from "./config";
 import prisma from "./lib/prisma";
-// import redis from "./lib/redisConnection";
 import logger from "./utils/logger/logger";
 
 let server: Server;
@@ -11,12 +10,9 @@ async function main() {
   try {
     // 1. Connect to database
     await prisma.$connect();
-    logger.info("🛢️  Database connected successfully");
+    logger.info("🛢️ Database connected successfully");
 
-    // 2. Connect to Redis
-    // await redis.connect();
-
-    // 3. Start HTTP server
+    // 2. Start HTTP server
     server = app.listen(config.port, config.host, () => {
       logger.info(`🚀 Server running on ${config.host}:${config.port} [${config.env}]`);
       // logger.info(`📄 API docs: http://localhost:${config.port}/api/docs`);
@@ -55,13 +51,6 @@ const gracefulShutdown = async (signal: string) => {
       } catch (err) {
         logger.error("Error disconnecting database:", err);
       }
-
-      // try {
-      //   await redis.quit();
-      //   logger.info("Redis disconnected.");
-      // } catch (err) {
-      //   logger.error("Error disconnecting Redis:", err);
-      // }
 
       process.exit(0);
     });

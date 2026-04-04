@@ -25,9 +25,10 @@ const handleClientError = (error: PrismaClientKnownRequestError) => {
       ];
     }
   } else if (error.code === "P2002") {
-    const target = (error.meta?.target as string[]) || [];
-    message = `Duplicate value for field: ${target.join(", ")}`;
-    errors = [{ path: target.join(", "), message }];
+    const target = error.meta?.target;
+    const targetFields = Array.isArray(target) ? target.join(", ") : (typeof target === "string" ? target : "field");
+    message = `Duplicate value for: ${targetFields}`;
+    errors = [{ path: targetFields, message }];
   } else {
     message = error.message || "Something went wrong!";
     errors = [{ path: "", message }];

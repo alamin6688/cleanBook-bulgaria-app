@@ -2,9 +2,13 @@ import { z } from "zod";
 
 const createUserZodSchema = z.object({
   body: z.object({
-    name: z.string().min(1, "Name is required"),
-    email: z.string().min(1, "Email is required").email("Invalid email address"),
-    password: z.string().min(6, "Password must be at least 6 characters long"),
+    name: z.string().min(1, "Enter your name"),
+    email: z.string().min(1, "Enter your email").email("Invalid email"),
+    password: z.string().min(6, "Pass must be 6+"),
+    phone: z.string().min(1, "Phone is required"),
+    role: z.enum(["CUSTOMER", "CLEANER"], {
+      message: "Given role didn't match, input right one",
+    }),
   }),
 });
 
@@ -12,12 +16,6 @@ const loginZodSchema = z.object({
   body: z.object({
     email: z.string().min(1, "Email is required").email("Invalid email address"),
     password: z.string().min(1, "Password is required"),
-  }),
-});
-
-const refreshTokenZodSchema = z.object({
-  body: z.object({
-    refreshToken: z.string().min(1, "Refresh token is required"),
   }),
 });
 
@@ -50,8 +48,7 @@ const verifyEmailZodSchema = z.object({
 
 const resendOtpZodSchema = z.object({
   body: z.object({
-    email: z.string().min(1, "Email is required").email("Invalid email address"),
-    purpose: z.enum(["EMAIL_VERIFICATION", "PASSWORD_RESET"]),
+    email: z.string().min(1, "Enter your email").email("Invalid email"),
   }),
 });
 
@@ -62,10 +59,11 @@ const changePasswordZodSchema = z.object({
   }),
 });
 
+
+
 export const AuthValidation = {
   createUserZodSchema,
   loginZodSchema,
-  refreshTokenZodSchema,
   forgotPasswordZodSchema,
   verifyOtpZodSchema,
   resetPasswordZodSchema,

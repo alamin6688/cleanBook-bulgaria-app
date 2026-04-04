@@ -4,7 +4,6 @@ import { JsonWebTokenError, TokenExpiredError } from "jsonwebtoken";
 import config from "../../config";
 import ApiError from "../../errors/apiError";
 import prisma from "../../lib/prisma";
-// import { isTokenBlacklisted } from "../../lib/redisConnection";
 import { jwtHelpers } from "../../utils/jwtHelpers";
 
 const auth = (...roles: string[]) => {
@@ -22,29 +21,51 @@ const auth = (...roles: string[]) => {
         throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid token format.");
       }
 
-      // Check if token is blacklisted (logged out)
-      // const blacklisted = await isTokenBlacklisted(token);
-      // if (blacklisted) {
-      //   throw new ApiError(
-      //     httpStatus.UNAUTHORIZED,
-      //     "Token has been invalidated. Please log in again."
-      //   );
-      // }
-
       let decoded;
       try {
         decoded = jwtHelpers.verifyToken(token, config.jwt.secret);
       } catch (err) {
         if (err instanceof TokenExpiredError) {
-          throw new ApiError(
-            httpStatus.UNAUTHORIZED,
-            "Your session has expired. Please log in again."
-          );
-        }
-        if (err instanceof JsonWebTokenError) {
+          // Attempt automatic refresh if x-refresh-token is provided
+          const refreshToken = req.headers["x-refresh-token"] as string;
+          if (refreshToken) {
+            try {
+              // Verify the refresh token
+              const decodedRefresh = (await jwtHelpers.verifyToken(
+                refreshToken,
+                config.jwt.refreshSecret
+              )) as any;
+
+              // Verify refresh token exists in DB (rotation protection)
+              const storedToken = await prisma.refreshToken.findUnique({
+                where: { token: refreshToken },
+              });
+
+              if (storedToken && storedToken.expiresAt > new Date()) {
+                // Generate a new access token
+                const newAccessToken = jwtHelpers.generateToken(
+                  { id: decodedRefresh.id, email: decodedRefresh.email, role: decodedRefresh.role },
+                  config.jwt.secret,
+                  config.jwt.expiresIn
+                );
+
+                // Send the new access token back to the client via a header
+                res.setHeader("x-new-access-token", newAccessToken);
+
+                // Allow request to proceed with the renewed payload
+                decoded = decodedRefresh;
+              } else {
+                throw new ApiError(httpStatus.UNAUTHORIZED, "Session expired. Please log in again.");
+              }
+            } catch (refreshErr) {
+              throw new ApiError(httpStatus.UNAUTHORIZED, "Session expired. Please log in again.");
+            }
+          } else {
+            throw new ApiError(httpStatus.UNAUTHORIZED, "Session expired. Please log in again.");
+          }
+        } else {
           throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid token. Please log in again.");
         }
-        throw err;
       }
 
       // Verify user still exists and is active

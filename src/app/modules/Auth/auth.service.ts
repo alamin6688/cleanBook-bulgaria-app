@@ -1,10 +1,10 @@
-import { OtpPurpose } from "@prisma/client";
+import { Role, OtpPurpose } from "@prisma/client";
+import { OAuth2Client } from "google-auth-library";
 import httpStatus from "http-status";
 import config from "../../../config";
 import ApiError from "../../../errors/apiError";
 import emailSender from "../../../helpers/email_sender/emailSender";
 import prisma from "../../../lib/prisma";
-import { blacklistToken, isTokenBlacklisted } from "../../../lib/redisConnection";
 import { otpEmail } from "../../../shared/emails/otpEmail";
 import { passwordResetEmail } from "../../../shared/emails/passwordResetEmail";
 import { generateOTP } from "../../../utils/generateOtp";
@@ -22,7 +22,9 @@ import {
   IVerifyOtpInput,
 } from "./auth.interface";
 
-const OTP_EXPIRY_MINUTES = 10;
+const OTP_EXPIRY_MINUTES = 5;
+
+const client = new OAuth2Client(config.google.client_id);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -30,7 +32,8 @@ const OTP_EXPIRY_MINUTES = 10;
 
 const saveRefreshToken = async (userId: string, token: string) => {
   const expiresAt = new Date();
-  expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+  expiresAt.setDate(expiresAt.getDate() + 30); // 30 days for refresh token
+
   await prisma.refreshToken.create({
     data: { userId, token, expiresAt },
   });
@@ -62,22 +65,41 @@ const createAndSendOtp = async (email: string, purpose: OtpPurpose, userId: stri
 // ---------------------------------------------------------------------------
 
 const register = async (userData: IUser) => {
-  const existing = await prisma.user.findUnique({
+  const existingEmail = await prisma.user.findUnique({
     where: { email: userData.email },
   });
-  if (existing) {
-    throw new ApiError(httpStatus.CONFLICT, "Email is already registered.");
+  if (existingEmail) {
+    throw new ApiError(httpStatus.CONFLICT, "Email is already in use by another account.");
+  }
+
+  const existingPhone = await prisma.user.findUnique({
+    where: { phone: userData.phone },
+  });
+  if (existingPhone) {
+    throw new ApiError(httpStatus.CONFLICT, "Phone number is already in use by another account.");
   }
 
   const hashedPassword = await hashItem(userData.password);
 
-  const user = await prisma.user.create({
-    data: {
-      email: userData.email,
-      name: userData.name,
-      password: hashedPassword,
-    },
-    select: { id: true, name: true, email: true, role: true, isEmailVerified: true },
+  const user = await prisma.$transaction(async (tx) => {
+    const newUser = await tx.user.create({
+      data: {
+        email: userData.email,
+        name: userData.name,
+        password: hashedPassword,
+        phone: userData.phone,
+        role: userData.role,
+      },
+      select: { id: true, name: true, email: true, role: true, isEmailVerified: true },
+    });
+
+    if (userData.role === "CLEANER") {
+      await tx.cleanerProfile.create({
+        data: { userId: newUser.id },
+      });
+    }
+
+    return newUser;
   });
 
   // Send verification OTP
@@ -97,6 +119,10 @@ const login = async (loginData: ILoginInput) => {
 
   if (!user.isActive) {
     throw new ApiError(httpStatus.FORBIDDEN, "Your account has been deactivated.");
+  }
+
+  if (!user.password) {
+    throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid email or password.");
   }
 
   const isPasswordValid = await compareItem(loginData.password, user.password);
@@ -133,113 +159,108 @@ const login = async (loginData: ILoginInput) => {
   };
 };
 
-const refreshAccessToken = async ({ refreshToken }: IRefreshTokenInput) => {
-  // Check blacklist
-  const blacklisted = await isTokenBlacklisted(refreshToken);
-  if (blacklisted) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, "Refresh token has been revoked.");
-  }
-
-  let decoded: ITokenPayload;
-  try {
-    decoded = jwtHelpers.verifyToken(refreshToken, config.jwt.refreshSecret) as ITokenPayload;
-  } catch {
-    throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid or expired refresh token.");
-  }
-
-  // Verify token exists in DB
-  const storedToken = await prisma.refreshToken.findUnique({
-    where: { token: refreshToken },
+const loginWithGmail = async (idToken: string, role: Role = Role.CUSTOMER) => {
+  const ticket = await client.verifyIdToken({
+    idToken,
+    audience: config.google.client_id,
   });
 
-  if (!storedToken || storedToken.expiresAt < new Date()) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, "Refresh token not found or expired.");
+  const googlePayload = ticket.getPayload();
+  if (!googlePayload || !googlePayload.email) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Invalid Google token payload.");
   }
 
-  const user = await prisma.user.findUnique({
-    where: { id: decoded.id },
-    select: { id: true, email: true, role: true, isActive: true },
+  const { email, name, picture } = googlePayload;
+
+  let user = await prisma.user.findUnique({
+    where: { email },
   });
 
-  if (!user || !user.isActive) {
-    throw new ApiError(httpStatus.UNAUTHORIZED, "User not found or account deactivated.");
+  let isNewUser = false;
+
+  if (!user) {
+    isNewUser = true;
+
+    user = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          email,
+          name: name || email.split("@")[0],
+          avatar: picture,
+          role: role,
+          isEmailVerified: true,
+        },
+      });
+
+      if (role === Role.CLEANER) {
+        await tx.cleanerProfile.create({
+          data: { userId: newUser.id },
+        });
+      }
+
+      return newUser;
+    });
   }
 
-  const payload: ITokenPayload = { id: user.id, email: user.email, role: user.role };
-  const { accessToken, refreshToken: newRefreshToken } = jwtHelpers.generateAuthTokens(payload);
+  if (!user.isActive) {
+    throw new ApiError(httpStatus.FORBIDDEN, "User account is suspended.");
+  }
 
-  // Rotate refresh token: delete old, save new
-  await prisma.refreshToken.delete({ where: { token: refreshToken } });
-  await saveRefreshToken(user.id, newRefreshToken);
+  const payload: ITokenPayload = {
+    id: user.id,
+    email: user.email,
+    role: user.role,
+  };
 
-  return { accessToken, refreshToken: newRefreshToken };
+  const { accessToken, refreshToken } = jwtHelpers.generateAuthTokens(payload);
+
+  await saveRefreshToken(user.id, refreshToken);
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLogin: new Date() },
+  });
+
+  return {
+    accessToken,
+    refreshToken,
+    isNewUser,
+    user: {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      avatar: user.avatar,
+      onboardingCompleted: user.onboardingCompleted,
+    },
+  };
 };
 
-const logout = async (accessToken: string, refreshToken?: string) => {
-  // Blacklist the access token — decode to get TTL
-  try {
-    const decoded = jwtHelpers.verifyToken(accessToken, config.jwt.secret);
-    const now = Math.floor(Date.now() / 1000);
-    const ttl = (decoded.exp ?? now + 900) - now;
-    if (ttl > 0) {
-      await blacklistToken(accessToken, ttl);
-    }
-  } catch {
-    // Token expired already — that's fine
-  }
 
+
+const logout = async (accessToken: string, refreshToken?: string) => {
   // Remove refresh token from DB
   if (refreshToken) {
     await prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
   }
 };
 
-const verifyEmail = async ({ email, otp }: IVerifyEmailInput) => {
+const resendOtp = async ({ email }: { email: string }) => {
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user) {
     throw new ApiError(httpStatus.NOT_FOUND, "User not found.");
   }
-  if (user.isEmailVerified) {
-    throw new ApiError(httpStatus.BAD_REQUEST, "Email is already verified.");
-  }
 
-  const otpRecord = await prisma.otpToken.findFirst({
-    where: {
-      userId: user.id,
-      otp,
-      purpose: OtpPurpose.EMAIL_VERIFICATION,
-      used: false,
-      expiresAt: { gt: new Date() },
-    },
+  // Find the most recent unused OTP for this user
+  const latestOtp = await prisma.otpToken.findFirst({
+    where: { userId: user.id, used: false },
+    orderBy: { createdAt: "desc" },
   });
 
-  if (!otpRecord) {
-    throw new ApiError(httpStatus.BAD_REQUEST, "Invalid or expired OTP.");
-  }
+  // If there's an active OTP of any type, use its purpose
+  const purpose = latestOtp ? latestOtp.purpose : (user.isEmailVerified ? OtpPurpose.PASSWORD_RESET : OtpPurpose.EMAIL_VERIFICATION);
 
-  await prisma.$transaction([
-    prisma.user.update({
-      where: { id: user.id },
-      data: { isEmailVerified: true },
-    }),
-    prisma.otpToken.update({
-      where: { id: otpRecord.id },
-      data: { used: true },
-    }),
-  ]);
-};
-
-const resendOtp = async ({ email, purpose }: IResendOtpInput) => {
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    throw new ApiError(httpStatus.NOT_FOUND, "User not found.");
-  }
-
-  if (purpose === "EMAIL_VERIFICATION" && user.isEmailVerified) {
-    throw new ApiError(httpStatus.BAD_REQUEST, "Email is already verified.");
-  }
-
-  await createAndSendOtp(email, purpose as OtpPurpose, user.id);
+  await createAndSendOtp(email, purpose, user.id);
 };
 
 const forgotPassword = async ({ email }: IForgotPasswordInput) => {
@@ -260,7 +281,6 @@ const verifyOtp = async ({ email, otp }: IVerifyOtpInput) => {
     where: {
       userId: user.id,
       otp,
-      purpose: OtpPurpose.PASSWORD_RESET,
       used: false,
       expiresAt: { gt: new Date() },
     },
@@ -270,14 +290,39 @@ const verifyOtp = async ({ email, otp }: IVerifyOtpInput) => {
     throw new ApiError(httpStatus.BAD_REQUEST, "Invalid or expired OTP.");
   }
 
-  await prisma.otpToken.update({
-    where: { id: otpRecord.id },
-    data: { used: true },
+  return await prisma.$transaction(async (tx) => {
+    await tx.otpToken.update({
+      where: { id: otpRecord.id },
+      data: { used: true },
+    });
+
+    if (otpRecord.purpose === OtpPurpose.EMAIL_VERIFICATION) {
+      await tx.user.update({
+        where: { id: user.id },
+        data: { isEmailVerified: true },
+      });
+
+      return {
+        message: "Email verified successfully. Please login now!",
+        verified: true,
+      };
+    }
+
+    if (otpRecord.purpose === OtpPurpose.PASSWORD_RESET) {
+      const resetToken = jwtHelpers.generateToken(
+        { email: user.email },
+        config.jwt.secret,
+        config.jwt.resetPassTokenExpiresIn
+      );
+      return {
+        message: "OTP verified. Use reset token to change password.",
+        verified: false,
+        resetToken,
+      };
+    }
+
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, "Unknown OTP purpose.");
   });
-
-  const resetToken = jwtHelpers.generateToken({ email: user.email }, config.jwt.secret, "10m");
-
-  return { resetToken };
 };
 
 const resetPassword = async ({ resetToken, newPassword }: IResetPasswordInput) => {
@@ -309,6 +354,10 @@ const changePassword = async (userId: string, data: IChangePasswordInput) => {
   const user = await prisma.user.findUnique({ where: { id: userId } });
   if (!user) {
     throw new ApiError(httpStatus.NOT_FOUND, "User not found.");
+  }
+
+  if (!user.password) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Password not set for this account.");
   }
 
   const isOldPasswordValid = await compareItem(data.oldPassword, user.password);
@@ -350,13 +399,12 @@ const getMe = async (id: string) => {
 export const AuthService = {
   register,
   login,
-  refreshAccessToken,
   logout,
-  verifyEmail,
   resendOtp,
   forgotPassword,
   verifyOtp,
   resetPassword,
   changePassword,
   getMe,
+  loginWithGmail,
 };

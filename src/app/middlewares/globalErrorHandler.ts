@@ -30,21 +30,29 @@ const GlobalErrorHandler = (error: unknown, req: Request, res: Response, next: N
     statusCode = httpStatus.BAD_REQUEST;
     message = "Validation error in database query.";
     errorMessages = [{ path: "", message: "Prisma validation error" }];
-  } else if (error instanceof ZodError) {
+  }
+
+   else if (error instanceof ZodError) {
     const simplified = handleZodError(error);
     statusCode = simplified.statusCode;
     message = simplified.message;
     errorMessages = simplified.errorMessages;
-  } else if (error instanceof PrismaClientKnownRequestError) {
+  } 
+  
+  else if (error instanceof PrismaClientKnownRequestError) {
     const simplified = handleClientError(error);
     statusCode = simplified.statusCode;
     message = simplified.message;
     errorMessages = simplified.errorMessages;
-  } else if (error instanceof ApiError) {
+  } 
+  
+  else if (error instanceof ApiError) {
     statusCode = error.statusCode;
     message = error.message;
     errorMessages = error.message ? [{ path: "", message: error.message }] : [];
-  } else if (error instanceof TokenExpiredError) {
+  } 
+  
+  else if (error instanceof TokenExpiredError) {
     statusCode = httpStatus.UNAUTHORIZED;
     message = "Your session has expired. Please log in again.";
     errorMessages = [
@@ -53,34 +61,50 @@ const GlobalErrorHandler = (error: unknown, req: Request, res: Response, next: N
         message: `Token expired at ${error.expiredAt.toISOString()}`,
       },
     ];
-  } else if (error instanceof JsonWebTokenError) {
+  }
+  
+  else if (error instanceof JsonWebTokenError) {
     statusCode = httpStatus.UNAUTHORIZED;
     message = "Invalid token. Please log in again.";
     errorMessages = [{ path: "token", message: error.message }];
-  } else if (error instanceof multer.MulterError) {
+  } 
+  
+  else if (error instanceof multer.MulterError) {
     statusCode = httpStatus.BAD_REQUEST;
     message = error.code === "LIMIT_FILE_SIZE" ? "File size is too large." : error.message;
     errorMessages = [{ path: "", message: error.message }];
-  } else if (error instanceof PrismaClientInitializationError) {
+  } 
+  
+  else if (error instanceof PrismaClientInitializationError) {
     statusCode = httpStatus.INTERNAL_SERVER_ERROR;
     message = "Database initialization error. Please try again later.";
     errorMessages = [{ path: "", message: "Prisma initialization error" }];
-  } else if (error instanceof PrismaClientRustPanicError) {
+  } 
+  
+  else if (error instanceof PrismaClientRustPanicError) {
     statusCode = httpStatus.INTERNAL_SERVER_ERROR;
     message = "A critical database engine error occurred.";
     errorMessages = [{ path: "", message: "Prisma engine panic" }];
-  } else if (error instanceof PrismaClientUnknownRequestError) {
+  }
+  
+  else if (error instanceof PrismaClientUnknownRequestError) {
     statusCode = httpStatus.INTERNAL_SERVER_ERROR;
     message = "An unknown database error occurred.";
     errorMessages = [{ path: "", message: "Unknown Prisma error" }];
-  } else if (error instanceof SyntaxError) {
+  }
+  
+  else if (error instanceof SyntaxError) {
     statusCode = httpStatus.BAD_REQUEST;
     message = "Malformed JSON in request body.";
     errorMessages = [{ path: "", message: "Syntax error" }];
-  } else if (error instanceof Error) {
+  }
+  
+  else if (error instanceof Error) {
     message = error.message || "An unexpected error occurred";
     errorMessages = [{ path: "", message: message }];
-  } else {
+  } 
+  
+  else {
     message = "An unexpected error occurred.";
     errorMessages = [{ path: "", message }];
   }
@@ -100,8 +124,10 @@ const GlobalErrorHandler = (error: unknown, req: Request, res: Response, next: N
     success: false,
     message,
     errorMessages,
-    // Only expose stack trace in development
-    ...(config.env !== "production" && error instanceof Error ? { stack: error.stack } : {}),
+    // Only expose stack trace for server-side errors (>= 500) in non-production
+    ...(config.env !== "production" && error instanceof Error && statusCode >= 500
+      ? { stack: error.stack }
+      : {}),
   });
 };
 

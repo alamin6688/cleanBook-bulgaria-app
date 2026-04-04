@@ -19,11 +19,9 @@ router.post(
   AuthController.login
 );
 
-router.post(
-  "/refresh-token",
-  RequestValidation.validateRequest(AuthValidation.refreshTokenZodSchema),
-  AuthController.refreshToken
-);
+router.post("/google-login", AuthController.loginWithGmail);
+
+
 
 router.post(
   "/forgot-password",
@@ -44,27 +42,14 @@ router.post(
 );
 
 router.post(
-  "/verify-email",
-  RequestValidation.validateRequest(AuthValidation.verifyEmailZodSchema),
-  AuthController.verifyEmail
-);
-
-router.post(
   "/resend-otp",
   RequestValidation.validateRequest(AuthValidation.resendOtpZodSchema),
   AuthController.resendOtp
 );
 
-// Protected routes
-router.post("/logout", auth("USER", "ADMIN", "SUPER_ADMIN"), AuthController.logout);
+router.post("/logout", AuthController.logout);
 
-router.get("/me", auth("USER", "ADMIN", "SUPER_ADMIN"), AuthController.getMe);
+// router.get("/me", auth("USER", "ADMIN", "SUPER_ADMIN"), AuthController.getMe);
 
-router.post(
-  "/change-password",
-  auth("USER", "ADMIN", "SUPER_ADMIN"),
-  RequestValidation.validateRequest(AuthValidation.changePasswordZodSchema),
-  AuthController.changePassword
-);
 
 export const AuthRoutes = router;

@@ -14,22 +14,23 @@ const register = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const loginWithGmail = catchAsync(async (req: Request, res: Response) => {
+  const { idToken, role } = req.body;
+  const result = await AuthService.loginWithGmail(idToken, role);
+  sendResponse(res, {
+    success: true,
+    statusCode: httpStatus.OK,
+    message: result.isNewUser ? "Google registration successful." : "Google login successful.",
+    data: result,
+  });
+});
+
 const login = catchAsync(async (req: Request, res: Response) => {
   const result = await AuthService.login(req.body);
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
     message: "Login successful.",
-    data: result,
-  });
-});
-
-const refreshToken = catchAsync(async (req: Request, res: Response) => {
-  const result = await AuthService.refreshAccessToken(req.body);
-  sendResponse(res, {
-    success: true,
-    statusCode: httpStatus.OK,
-    message: "Token refreshed successfully.",
     data: result,
   });
 });
@@ -42,16 +43,6 @@ const logout = catchAsync(async (req: Request, res: Response) => {
     success: true,
     statusCode: httpStatus.OK,
     message: "Logged out successfully.",
-    data: null,
-  });
-});
-
-const verifyEmail = catchAsync(async (req: Request, res: Response) => {
-  await AuthService.verifyEmail(req.body);
-  sendResponse(res, {
-    success: true,
-    statusCode: httpStatus.OK,
-    message: "Email verified successfully.",
     data: null,
   });
 });
@@ -82,7 +73,7 @@ const verifyOtp = catchAsync(async (req: Request, res: Response) => {
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
-    message: "OTP verified successfully. You can now reset your password.",
+    message: result.message || "OTP verified successfully.",
     data: result,
   });
 });
@@ -120,10 +111,9 @@ const getMe = catchAsync(async (req: Request, res: Response) => {
 export const AuthController = {
   register,
   login,
-  refreshToken,
   logout,
-  verifyEmail,
   resendOtp,
+  loginWithGmail,
   forgotPassword,
   verifyOtp,
   resetPassword,

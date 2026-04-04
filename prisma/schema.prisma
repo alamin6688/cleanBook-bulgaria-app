@@ -8,7 +8,8 @@ datasource db {
 }
 
 enum Role {
-  USER
+  CUSTOMER
+  CLEANER
   ADMIN
   SUPER_ADMIN
 }
@@ -18,20 +19,101 @@ enum OtpPurpose {
   PASSWORD_RESET
 }
 
+enum PropertyType {
+  FLAT
+  HOUSE
+  OFFICE
+  STUDIO
+}
+
 model User {
   id              String    @id @default(auto()) @map("_id") @db.ObjectId
   email           String    @unique
-  password        String
+  password        String?
+
+  avatar          String?
+  phone           String?   @unique
   name            String?
-  role            Role      @default(USER)
+  role            Role      @default(CUSTOMER)
+  language        String?   @default("en")
   isEmailVerified Boolean   @default(false)
+
   isActive        Boolean   @default(true)
+  isBlocked       Boolean   @default(false)
+  onboardingCompleted Boolean @default(false)
   lastLogin       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  otpTokens     OtpToken[]
-  refreshTokens RefreshToken[]
+  otpTokens      OtpToken[]
+  refreshTokens  RefreshToken[]
+  cleanerProfile CleanerProfile?
+
+
+}
+
+model CleanerProfile {
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @unique @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Basic Info
+  displayName     String?
+  bio             String?
+  profilePhoto    String?
+  yearsExperience Int?    @default(0)
+
+  // Location
+  address      String?
+  city         String?
+  latitude     Float?
+  longitude    Float?
+  serviceAreas String[] // ["Lozenets", "Mladost", "Center"]
+
+  // Availability
+  workingDays   String[] // ["Mon", "Tue", "Wed", "Thu"]
+  workFrom      String? // "08:00"
+  workTo        String? // "18:00"
+  workType      WorkType   @default(FULL_DAY)
+  blockOffDates DateTime[]
+
+  // Preferences
+  propertyTypes PropertyType[]
+
+  // Stats
+  avgRating    Float @default(0)
+  totalReviews Int   @default(0)
+  totalJobs    Int   @default(0)
+
+  services CleanerService[]
+}
+
+model CleanerService {
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  cleanerProfileId String         @db.ObjectId
+  cleanerProfile   CleanerProfile @relation(fields: [cleanerProfileId], references: [id], onDelete: Cascade)
+
+  name          ServiceType
+  pricePerHour  Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+
+enum WorkType {
+  HALF_DAY
+  FULL_DAY
+  QUARTER_DAY
+}
+
+enum ServiceType {
+  REGULAR_CLEANING
+  DEEP_CLEANING
+  IRONING
+  WINDOW_CLEANING
+  MOVE_OUT_CLEAN
+  LAUNDRY
 }
 
 model OtpToken {
