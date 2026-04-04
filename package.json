@@ -21,15 +21,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ThisIsKhalid/backend-starter-pack.git"
+    "url": "git+https://github.com/alamin6688/cleanBook-bulgaria-app.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/ThisIsKhalid/backend-starter-pack/issues"
+    "url": "https://github.com/alamin6688/cleanBook-bulgaria-app.git/issues"
   },
-  "homepage": "https://github.com/ThisIsKhalid/backend-starter-pack#readme",
+  "homepage": "https://github.com/alamin6688/cleanBook-bulgaria-app.git#readme",
   "dependencies": {
     "@prisma/client": "^6.19.2",
     "@types/node": "^25.0.8",
