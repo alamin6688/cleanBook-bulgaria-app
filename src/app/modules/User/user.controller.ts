@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import httpStatus from "http-status";
 import catchAsync from "../../../shared/catchAsync";
 import sendResponse from "../../../shared/sendResponse";
+import ApiError from "../../../errors/apiError";
 import { UserService } from "./user.service";
 
 const updateLanguage = catchAsync(async (req: Request, res: Response) => {
@@ -48,14 +49,55 @@ const updateCleanerDetails = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
-const completeOnboarding = catchAsync(async (req: Request, res: Response) => {
-  const userId = req.user.id;
-  await UserService.completeOnboarding(userId);
+const getNearbyCleaners = catchAsync(async (req: Request, res: Response) => {
+  const { latitude, longitude, radius } = req.query;
+  
+  if (!latitude || !longitude) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Latitude and Longitude are required");
+  }
+
+  const result = await UserService.getNearbyCleaners(
+    Number(latitude),
+    Number(longitude),
+    radius ? Number(radius) : undefined
+  );
+
   sendResponse(res, {
     statusCode: httpStatus.OK,
     success: true,
-    message: "Onboarding completed successfully",
-    data: null,
+    message: "Nearby cleaners retrieved successfully",
+    data: result,
+  });
+});
+
+const updateProfile = catchAsync(async (req: Request, res: Response) => {
+  const userId = req.user.id;
+  const result = await UserService.updateProfile(userId, req.body);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Profile updated successfully!",
+    data: result,
+  });
+});
+
+const getUserById = catchAsync(async (req: Request, res: Response) => {
+  const result = await UserService.getUserById(req.params.id as string);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "User details retrieved successfully",
+    data: result,
+  });
+});
+
+const getProfile = catchAsync(async (req: Request, res: Response) => {
+  const result = await UserService.getUserById(req.user.id as string);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Profile retrieved successfully",
+    data: result,
   });
 });
 
@@ -64,5 +106,8 @@ export const UserController = {
   updateLocation,
   updateBasicProfile,
   updateCleanerDetails,
-  completeOnboarding,
+  getNearbyCleaners,
+  updateProfile,
+  getUserById,
+  getProfile,
 };

@@ -1,4 +1,5 @@
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import express, { Application, NextFunction, Request, Response } from "express";
 import rateLimit from "express-rate-limit";
 import helmet from "helmet";
@@ -16,6 +17,8 @@ import logger from "./utils/logger/logger";
 
 // Initialize app
 const app: Application = express();
+
+app.use(cookieParser());
 
 // ---------------------------------------------------------------------------
 // Security Middlewares

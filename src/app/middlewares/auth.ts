@@ -10,12 +10,17 @@ const auth = (...roles: string[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const authHeader = req.headers.authorization;
+      let token = null;
 
-      if (!authHeader || !authHeader.startsWith("Bearer ")) {
-        throw new ApiError(httpStatus.UNAUTHORIZED, "No token provided. Please log in.");
+      if (authHeader && authHeader.startsWith("Bearer ")) {
+        token = authHeader.split(" ")[1];
+      } else if (req.cookies && req.cookies.accessToken) {
+        token = req.cookies.accessToken;
       }
 
-      const token = authHeader.split(" ")[1];
+      if (!token) {
+        throw new ApiError(httpStatus.UNAUTHORIZED, "Please login again!");
+      }
 
       if (!token) {
         throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid token format.");

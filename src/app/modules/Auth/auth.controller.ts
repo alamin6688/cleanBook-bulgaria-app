@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import httpStatus from "http-status";
+import config from "../../../config";
 import catchAsync from "../../../shared/catchAsync";
 import sendResponse from "../../../shared/sendResponse";
 import { AuthService } from "./auth.service";
@@ -17,28 +18,54 @@ const register = catchAsync(async (req: Request, res: Response) => {
 const loginWithGmail = catchAsync(async (req: Request, res: Response) => {
   const { idToken, role } = req.body;
   const result = await AuthService.loginWithGmail(idToken, role);
+  
+  const { accessToken, ...others } = result;
+
+  res.cookie("accessToken", accessToken, {
+    secure: config.env === "production",
+    httpOnly: true,
+    sameSite: config.env === "production" ? "none" : "lax",
+    maxAge: 30 * 24 * 60 * 60 * 1000, 
+  });
+
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
     message: result.isNewUser ? "Google registration successful." : "Google login successful.",
-    data: result,
+    data: { accessToken, ...others },
   });
 });
 
 const login = catchAsync(async (req: Request, res: Response) => {
   const result = await AuthService.login(req.body);
+  const { accessToken, ...others } = result;
+
+  res.cookie("accessToken", accessToken, {
+    secure: config.env === "production",
+    httpOnly: true,
+    sameSite: config.env === "production" ? "none" : "lax",
+    maxAge: 30 * 24 * 60 * 60 * 1000,
+  });
+
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,
     message: "Login successful.",
-    data: result,
+    data: { accessToken, ...others },
   });
 });
 
 const logout = catchAsync(async (req: Request, res: Response) => {
-  const accessToken = req.headers.authorization?.split(" ")[1] ?? "";
+  const accessToken = req.headers.authorization?.split(" ")[1] ?? req.cookies?.accessToken ?? "";
   const { refreshToken } = req.body as { refreshToken?: string };
   await AuthService.logout(accessToken, refreshToken);
+
+  res.clearCookie("accessToken", {
+    secure: config.env === "production",
+    httpOnly: true,
+    sameSite: config.env === "production" ? "none" : "lax",
+  });
+
   sendResponse(res, {
     success: true,
     statusCode: httpStatus.OK,

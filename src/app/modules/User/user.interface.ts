@@ -18,9 +18,36 @@ export type IUpdateBasicProfileInput = {
 export type IUpdateCleanerProfileInput = {
   workingDays: string[];
   serviceAreas: string[];
-  propertyTypes: ("FLAT" | "HOUSE" | "OFFICE" | "STUDIO")[];
+  propertyTypeIds: string[];
+  additionalServiceIds: string[];
   services: {
-    name: "REGULAR_CLEANING" | "DEEP_CLEANING" | "IRONING" | "WINDOW_CLEANING" | "MOVE_OUT_CLEAN" | "LAUNDRY";
+    serviceCategoryId: string;
+    name: string;
+    pricePerHour: number;
+  }[];
+};
+
+export type IUpdateProfileInput = {
+  // Basic info
+  displayName?: string;
+  bio?: string;
+  profilePhoto?: string;
+  language?: string;
+  
+  // Location
+  address?: string;
+  city?: string;
+  latitude?: number;
+  longitude?: number;
+
+  // Cleaner specific details
+  workingDays?: string[];
+  serviceAreas?: string[];
+  propertyTypeIds?: string[];
+  additionalServiceIds?: string[];
+  services?: {
+    serviceCategoryId: string;
+    name: string;
     pricePerHour: number;
   }[];
 };

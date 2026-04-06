@@ -14,17 +14,7 @@ enum Role {
   SUPER_ADMIN
 }
 
-enum OtpPurpose {
-  EMAIL_VERIFICATION
-  PASSWORD_RESET
-}
-
-enum PropertyType {
-  FLAT
-  HOUSE
-  OFFICE
-  STUDIO
-}
+// Removed enums for PropertyType and ServiceType as they are now dynamic models.
 
 model User {
   id              String    @id @default(auto()) @map("_id") @db.ObjectId
@@ -44,6 +34,12 @@ model User {
   lastLogin       DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+  
+  // Location fields
+  city            String?
+  address         String?
+  latitude        Float?
+  longitude       Float?
 
   otpTokens      OtpToken[]
   refreshTokens  RefreshToken[]
@@ -78,7 +74,8 @@ model CleanerProfile {
   blockOffDates DateTime[]
 
   // Preferences
-  propertyTypes PropertyType[]
+  propertyTypeIds String[] @db.ObjectId
+  additionalServiceIds String[] @db.ObjectId
 
   // Stats
   avgRating    Float @default(0)
@@ -93,7 +90,10 @@ model CleanerService {
   cleanerProfileId String         @db.ObjectId
   cleanerProfile   CleanerProfile @relation(fields: [cleanerProfileId], references: [id], onDelete: Cascade)
 
-  name          ServiceType
+  serviceCategoryId String @db.ObjectId
+  serviceCategory   ServiceCategory @relation(fields: [serviceCategoryId], references: [id])
+  
+  name          String
   pricePerHour  Float
 
   createdAt DateTime @default(now())
@@ -101,19 +101,38 @@ model CleanerService {
 }
 
 
+
+enum OtpPurpose {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+model PropertyCategory {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ServiceCategory {
+  id        String           @id @default(auto()) @map("_id") @db.ObjectId
+  name      String           @unique
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  services  CleanerService[]
+}
+
+model AdditionalServiceCategory {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 enum WorkType {
   HALF_DAY
   FULL_DAY
   QUARTER_DAY
-}
-
-enum ServiceType {
-  REGULAR_CLEANING
-  DEEP_CLEANING
-  IRONING
-  WINDOW_CLEANING
-  MOVE_OUT_CLEAN
-  LAUNDRY
 }
 
 model OtpToken {

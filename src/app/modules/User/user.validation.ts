@@ -27,20 +27,41 @@ const updateCleanerProfileZodSchema = z.object({
   body: z.object({
     workingDays: z.array(z.string()).min(1),
     serviceAreas: z.array(z.string()).min(1),
-    propertyTypes: z.array(z.enum(["FLAT", "HOUSE", "OFFICE", "STUDIO"])).min(1),
-    services: z.array(
-      z.object({
-        name: z.enum([
-          "REGULAR_CLEANING",
-          "DEEP_CLEANING",
-          "IRONING",
-          "WINDOW_CLEANING",
-          "MOVE_OUT_CLEAN",
-          "LAUNDRY",
-        ]),
-        pricePerHour: z.number().positive(),
-      })
-    ).min(1),
+    propertyTypes: z.array(z.string()).min(1),
+    services: z
+      .array(
+        z.object({
+          serviceCategoryId: z.string().optional(),
+          name: z.string().min(1),
+          pricePerHour: z.number().positive(),
+        })
+      )
+      .min(1),
+  }),
+});
+
+const saveProfileZodSchema = z.object({
+  body: z.object({
+    displayName: z.string().optional(),
+    bio: z.string().optional(),
+    profilePhoto: z.string().optional(),
+    language: z.string().optional(),
+    address: z.string().optional(),
+    city: z.string().optional(),
+    latitude: z.number().optional(),
+    longitude: z.number().optional(),
+    workingDays: z.array(z.string()).optional(),
+    serviceAreas: z.array(z.string()).optional(),
+    propertyTypes: z.array(z.string()).optional(),
+    services: z
+      .array(
+        z.object({
+          serviceCategoryId: z.string().optional(),
+          name: z.string().optional(),
+          pricePerHour: z.number().positive().optional(),
+        })
+      )
+      .optional(),
   }),
 });
 
@@ -49,4 +70,5 @@ export const UserValidation = {
   updateLocationZodSchema,
   updateBasicProfileZodSchema,
   updateCleanerProfileZodSchema,
+  saveProfileZodSchema,
 };
