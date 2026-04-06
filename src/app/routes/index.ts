@@ -5,6 +5,8 @@ import { CategoryRoutes } from "../modules/Admin/Category/category.route";
 import { AvailabilityRoutes } from "../modules/Cleaner/Availability/availability.route";
 import { ServiceAreaRoutes } from "../modules/Admin/ServiceArea/serviceArea.route";
 
+import { CleanerService_Routes } from "../modules/Cleaner/Service/service.route";
+
 const router = express.Router();
 
 const moduleRoutes = [
@@ -23,6 +25,10 @@ const moduleRoutes = [
   {
     path: "/cleaner/availability",
     route: AvailabilityRoutes,
+  },
+  {
+    path: "/cleaner/services",
+    route: CleanerService_Routes,
   },
   {
     path: "/service-areas",

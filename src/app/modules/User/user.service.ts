@@ -249,37 +249,41 @@ const getNearbyCleaners = async (userLat: number, userLng: number, radiusKm: num
 const enrichCleanerProfile = async (cleanerProfile: any) => {
   if (!cleanerProfile) return null;
 
-  const [propertyTypes, additionalServices, serviceCategoryMap] = await Promise.all([
+  const [propertyTypes, additionalServices] = await Promise.all([
     cleanerProfile.propertyTypeIds?.length
       ? prisma.propertyCategory.findMany({
           where: { id: { in: cleanerProfile.propertyTypeIds } },
+          select: { id: true, name: true },
         })
       : Promise.resolve([]),
     cleanerProfile.additionalServiceIds?.length
       ? prisma.additionalServiceCategory.findMany({
           where: { id: { in: cleanerProfile.additionalServiceIds } },
-        })
-      : Promise.resolve([]),
-    cleanerProfile.services?.length
-      ? prisma.serviceCategory.findMany({
-          where: {
-            id: { in: cleanerProfile.services.map((s: any) => s.serviceCategoryId) },
-          },
+          select: { id: true, name: true },
         })
       : Promise.resolve([]),
   ]);
 
-  // Map service category details onto each service
-  const enrichedServices = (cleanerProfile.services ?? []).map((s: any) => {
-    const category = (serviceCategoryMap as any[]).find((c) => c.id === s.serviceCategoryId);
-    return {
-      ...s,
-      serviceCategory: category ?? null,
-    };
-  });
+  // Services are already pre-selected as { id, name, pricePerHour } from the DB query
+  const enrichedServices = (cleanerProfile.services ?? []).map((s: any) => ({
+    id: s.id,
+    name: s.name,
+    pricePerHour: s.pricePerHour,
+  }));
 
-  // Destructure out the raw ID arrays — return only enriched objects
-  const { propertyTypeIds, additionalServiceIds, ...rest } = cleanerProfile;
+  // Strip internal DB fields, raw ID arrays, duplicate location fields, and static enums
+  const {
+    propertyTypeIds,
+    additionalServiceIds,
+    id,
+    userId,
+    address,
+    city,
+    latitude,
+    longitude,
+    workType,     // static enum — excluded
+    ...rest
+  } = cleanerProfile;
 
   return {
     ...rest,
@@ -308,8 +312,38 @@ const getUserById = async (id: string) => {
       lastLogin: true,
       onboardingCompleted: true,
       cleanerProfile: {
-        include: {
-          services: true,
+        select: {
+          // Internal IDs — used only inside enrichCleanerProfile, stripped from output
+          id: true,
+          userId: true,
+          propertyTypeIds: true,
+          additionalServiceIds: true,
+          // Duplicate location — already on user root, stripped from output
+          address: true,
+          city: true,
+          latitude: true,
+          longitude: true,
+          // Dynamic / meaningful cleaner fields
+          displayName: true,
+          bio: true,
+          profilePhoto: true,
+          yearsExperience: true,
+          serviceAreas: true,
+          workingDays: true,
+          workFrom: true,
+          workTo: true,
+          blockOffDates: true,
+          avgRating: true,
+          totalReviews: true,
+          totalJobs: true,
+          // workType intentionally omitted — static enum, stripped in enrichCleanerProfile
+          services: {
+            select: {
+              id: true,
+              name: true,
+              pricePerHour: true,
+            },
+          },
         },
       },
     },
