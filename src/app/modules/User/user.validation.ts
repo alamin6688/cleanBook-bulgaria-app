@@ -37,6 +37,18 @@ const updateCleanerProfileZodSchema = z.object({
         })
       )
       .min(1),
+    workFrom: z.string().optional(),
+    workTo: z.string().optional(),
+    workType: z.enum(["HALF_DAY", "FULL_DAY", "QUARTER_DAY"]).optional(),
+    blockOffDates: z
+      .array(
+        z.coerce.date().refine((date) => {
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          return date > today;
+        }, { message: "Block off dates must be in the future (starting from tomorrow)" })
+      )
+      .optional(),
   }),
 });
 
@@ -62,6 +74,47 @@ const saveProfileZodSchema = z.object({
         })
       )
       .optional(),
+    workFrom: z.string().optional(),
+    workTo: z.string().optional(),
+    workType: z.enum(["HALF_DAY", "FULL_DAY", "QUARTER_DAY"]).optional(),
+    blockOffDates: z
+      .array(
+        z.coerce.date().refine(
+          (date) => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return date > today;
+          },
+          { message: "Block off dates must be in the future (starting from tomorrow)" }
+        )
+      )
+      .optional(),
+    postcodes: z.array(z.string()).optional(),
+    country: z.string().optional(),
+  }),
+});
+
+const updateAvailabilityZodSchema = z.object({
+  body: z.object({
+    workingDays: z.array(z.string()).optional(),
+    serviceAreas: z.array(z.string()).optional(),
+    workFrom: z.string().optional(),
+    workTo: z.string().optional(),
+    workType: z.enum(["HALF_DAY", "FULL_DAY", "QUARTER_DAY"]).optional(),
+    blockOffDates: z
+      .array(
+        z.coerce.date().refine(
+          (date) => {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            return date > today;
+          },
+          { message: "Block off dates must be in the future (starting from tomorrow)" }
+        )
+      )
+      .optional(),
+    postcodes: z.array(z.string()).optional(),
+    country: z.string().optional(),
   }),
 });
 
@@ -71,4 +124,5 @@ export const UserValidation = {
   updateBasicProfileZodSchema,
   updateCleanerProfileZodSchema,
   saveProfileZodSchema,
+  updateAvailabilityZodSchema,
 };

@@ -25,6 +25,10 @@ export type IUpdateCleanerProfileInput = {
     name: string;
     pricePerHour: number;
   }[];
+  workFrom?: string;
+  workTo?: string;
+  workType?: "HALF_DAY" | "FULL_DAY" | "QUARTER_DAY";
+  blockOffDates?: Date[];
 };
 
 export type IUpdateProfileInput = {
@@ -50,4 +54,8 @@ export type IUpdateProfileInput = {
     name: string;
     pricePerHour: number;
   }[];
+  workFrom?: string;
+  workTo?: string;
+  workType?: "HALF_DAY" | "FULL_DAY" | "QUARTER_DAY";
+  blockOffDates?: Date[];
 };

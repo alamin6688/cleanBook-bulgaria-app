@@ -2,6 +2,8 @@ import express from "express";
 import { AuthRoutes } from "../modules/Auth/auth.route";
 import { UserRoutes } from "../modules/User/user.route";
 import { CategoryRoutes } from "../modules/Admin/Category/category.route";
+import { AvailabilityRoutes } from "../modules/Cleaner/Availability/availability.route";
+import { ServiceAreaRoutes } from "../modules/Admin/ServiceArea/serviceArea.route";
 
 const router = express.Router();
 
@@ -17,6 +19,14 @@ const moduleRoutes = [
   {
     path: "/categories",
     route: CategoryRoutes,
+  },
+  {
+    path: "/cleaner/availability",
+    route: AvailabilityRoutes,
+  },
+  {
+    path: "/service-areas",
+    route: ServiceAreaRoutes,
   },
 ];
 

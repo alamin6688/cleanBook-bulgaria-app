@@ -165,6 +165,10 @@ const updateCleanerDetails = async (userId: string, data: IUpdateCleanerProfileI
         serviceAreas: data.serviceAreas,
         propertyTypeIds: data.propertyTypeIds,
         additionalServiceIds: data.additionalServiceIds,
+        workFrom: data.workFrom,
+        workTo: data.workTo,
+        workType: data.workType,
+        blockOffDates: data.blockOffDates,
       },
     });
 
@@ -242,6 +246,49 @@ const getNearbyCleaners = async (userLat: number, userLng: number, radiusKm: num
   return nearby;
 };
 
+const enrichCleanerProfile = async (cleanerProfile: any) => {
+  if (!cleanerProfile) return null;
+
+  const [propertyTypes, additionalServices, serviceCategoryMap] = await Promise.all([
+    cleanerProfile.propertyTypeIds?.length
+      ? prisma.propertyCategory.findMany({
+          where: { id: { in: cleanerProfile.propertyTypeIds } },
+        })
+      : Promise.resolve([]),
+    cleanerProfile.additionalServiceIds?.length
+      ? prisma.additionalServiceCategory.findMany({
+          where: { id: { in: cleanerProfile.additionalServiceIds } },
+        })
+      : Promise.resolve([]),
+    cleanerProfile.services?.length
+      ? prisma.serviceCategory.findMany({
+          where: {
+            id: { in: cleanerProfile.services.map((s: any) => s.serviceCategoryId) },
+          },
+        })
+      : Promise.resolve([]),
+  ]);
+
+  // Map service category details onto each service
+  const enrichedServices = (cleanerProfile.services ?? []).map((s: any) => {
+    const category = (serviceCategoryMap as any[]).find((c) => c.id === s.serviceCategoryId);
+    return {
+      ...s,
+      serviceCategory: category ?? null,
+    };
+  });
+
+  // Destructure out the raw ID arrays — return only enriched objects
+  const { propertyTypeIds, additionalServiceIds, ...rest } = cleanerProfile;
+
+  return {
+    ...rest,
+    propertyTypes,
+    additionalServices,
+    services: enrichedServices,
+  };
+};
+
 const getUserById = async (id: string) => {
   const user = await prisma.user.findUnique({
     where: { id },
@@ -272,8 +319,10 @@ const getUserById = async (id: string) => {
     throw new ApiError(httpStatus.NOT_FOUND, "User not found");
   }
 
-  // If user is a customer, we can just return the data (cleanerProfile will be null)
-  return user;
+  return {
+    ...user,
+    cleanerProfile: await enrichCleanerProfile(user.cleanerProfile),
+  };
 };
 
 const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
@@ -385,6 +434,10 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
           serviceAreas: data.serviceAreas,
           propertyTypeIds: data.propertyTypeIds,
           additionalServiceIds: data.additionalServiceIds,
+          workFrom: data.workFrom,
+          workTo: data.workTo,
+          workType: data.workType,
+          blockOffDates: data.blockOffDates,
         },
         update: {
           displayName: data.displayName,
@@ -398,6 +451,10 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
           serviceAreas: data.serviceAreas,
           propertyTypeIds: data.propertyTypeIds,
           additionalServiceIds: data.additionalServiceIds,
+          workFrom: data.workFrom,
+          workTo: data.workTo,
+          workType: data.workType,
+          blockOffDates: data.blockOffDates,
         },
       });
 
@@ -418,7 +475,7 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
       }
     }
 
-    return await tx.user.findUnique({
+    const result = await tx.user.findUnique({
       where: { id: userId },
       include: {
         cleanerProfile: {
@@ -426,6 +483,11 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
         },
       },
     });
+
+    return {
+      ...result,
+      cleanerProfile: await enrichCleanerProfile(result?.cleanerProfile),
+    };
   });
 };
 
