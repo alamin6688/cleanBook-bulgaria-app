@@ -17,35 +17,36 @@ enum Role {
 // Removed enums for PropertyType and ServiceType as they are now dynamic models.
 
 model User {
-  id              String    @id @default(auto()) @map("_id") @db.ObjectId
-  email           String    @unique
-  password        String?
+  id       String  @id @default(auto()) @map("_id") @db.ObjectId
+  email    String  @unique
+  password String?
 
   avatar          String?
-  phone           String?   @unique
+  phone           String? @unique
   name            String?
-  role            Role      @default(CUSTOMER)
-  language        String?   @default("en")
-  isEmailVerified Boolean   @default(false)
+  role            Role    @default(CUSTOMER)
+  language        String? @default("en")
+  isEmailVerified Boolean @default(false)
 
-  isActive        Boolean   @default(true)
-  isBlocked       Boolean   @default(false)
-  onboardingCompleted Boolean @default(false)
-  lastLogin       DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-  
+  isActive            Boolean   @default(true)
+  isBlocked           Boolean   @default(false)
+  onboardingCompleted Boolean   @default(false)
+  lastLogin           DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
   // Location fields
-  city            String?
-  address         String?
-  latitude        Float?
-  longitude       Float?
+  city      String?
+  address   String?
+  latitude  Float?
+  longitude Float?
 
   otpTokens      OtpToken[]
   refreshTokens  RefreshToken[]
   cleanerProfile CleanerProfile?
 
-
+  customerBookings Booking[] @relation("CustomerBookings")
+  cleanerBookings  Booking[] @relation("CleanerBookings")
 }
 
 model CleanerProfile {
@@ -74,7 +75,7 @@ model CleanerProfile {
   blockOffDates DateTime[]
 
   // Preferences
-  propertyTypeIds String[] @db.ObjectId
+  propertyTypeIds      String[] @db.ObjectId
   additionalServiceIds String[] @db.ObjectId
 
   // Stats
@@ -90,17 +91,15 @@ model CleanerService {
   cleanerProfileId String         @db.ObjectId
   cleanerProfile   CleanerProfile @relation(fields: [cleanerProfileId], references: [id], onDelete: Cascade)
 
-  serviceCategoryId String @db.ObjectId
+  serviceCategoryId String          @db.ObjectId
   serviceCategory   ServiceCategory @relation(fields: [serviceCategoryId], references: [id])
-  
-  name          String
-  pricePerHour  Float
+
+  name         String
+  pricePerHour Float
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
-
 
 enum OtpPurpose {
   EMAIL_VERIFICATION
@@ -112,14 +111,17 @@ model PropertyCategory {
   name      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  bookings  Booking[]
 }
 
 model ServiceCategory {
   id        String           @id @default(auto()) @map("_id") @db.ObjectId
   name      String           @unique
+  banner    String?
   createdAt DateTime         @default(now())
   updatedAt DateTime         @updatedAt
   services  CleanerService[]
+  bookings  Booking[]
 }
 
 model AdditionalServiceCategory {
@@ -141,6 +143,55 @@ enum WorkType {
   HALF_DAY
   FULL_DAY
   QUARTER_DAY
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+model Booking {
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
+  customerId String @db.ObjectId
+  customer   User   @relation("CustomerBookings", fields: [customerId], references: [id])
+
+  cleanerId String @db.ObjectId
+  cleaner   User   @relation("CleanerBookings", fields: [cleanerId], references: [id])
+
+  propertyCategoryId String           @db.ObjectId
+  propertyCategory   PropertyCategory @relation(fields: [propertyCategoryId], references: [id])
+
+  serviceCategoryId  String          @db.ObjectId
+  serviceCategory    ServiceCategory @relation(fields: [serviceCategoryId], references: [id])
+
+  rooms     Int  @default(1)
+  spaceSqft Int?
+
+  date      DateTime
+  startTime String // "HH:mm" format (24-hour)
+  endTime   String // "HH:mm" format (24-hour)
+  workType  WorkType
+
+  address   String?
+  city      String?
+  latitude  Float?
+  longitude Float?
+
+  specialInstructions String?
+
+  charge         Float
+  platformCharge Float
+  totalCharge    Float
+
+  paymentIntentId String? // Stripe Payment Intent ID
+  status          BookingStatus @default(PENDING)
+  paymentStatus   String        @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model OtpToken {

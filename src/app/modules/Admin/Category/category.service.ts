@@ -63,7 +63,7 @@ const deletePropertyCategory = async (id: string): Promise<PropertyCategory> => 
 };
 
 // Service Category
-const createServiceCategory = async (data: { name: string }): Promise<ServiceCategory> => {
+const createServiceCategory = async (data: { name: string; banner?: string }): Promise<ServiceCategory> => {
   const isExist = await prisma.serviceCategory.findFirst({
     where: {
       name: {
@@ -80,6 +80,7 @@ const createServiceCategory = async (data: { name: string }): Promise<ServiceCat
   return await prisma.serviceCategory.create({
     data: {
       name: data.name.trim(),
+      banner: data.banner,
     },
   });
 };
@@ -88,7 +89,7 @@ const getAllServiceCategories = async (): Promise<ServiceCategory[]> => {
   return await prisma.serviceCategory.findMany();
 };
 
-const updateServiceCategory = async (id: string, data: { name: string }): Promise<ServiceCategory> => {
+const updateServiceCategory = async (id: string, data: { name?: string; banner?: string }): Promise<ServiceCategory> => {
   if (data.name) {
     const isExist = await prisma.serviceCategory.findFirst({
       where: {

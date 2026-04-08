@@ -29,7 +29,7 @@ const GlobalErrorHandler = (error: unknown, req: Request, res: Response, next: N
   if (error instanceof PrismaClientValidationError) {
     statusCode = httpStatus.BAD_REQUEST;
     message = "Validation error in database query.";
-    errorMessages = [{ path: "", message: "Prisma validation error" }];
+    errorMessages = [{ path: "", message: error.message }];
   }
 
    else if (error instanceof ZodError) {

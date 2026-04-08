@@ -3,6 +3,8 @@ import axios from "axios";
 import ApiError from "../../../../errors/apiError";
 import prisma from "../../../../lib/prisma";
 import { IUpdateAvailabilityInput } from "./availability.interface";
+import { BookingStatus } from "@prisma/client";
+import { format, startOfDay, parse, isBefore, isAfter } from "date-fns";
 
 const resolvePostcodeToArea = async (
   postcode: string,
@@ -70,6 +72,61 @@ const updateAvailability = async (userId: string, data: IUpdateAvailabilityInput
       
       const uniqueNames = resolvedNames.filter((name): name is string => name !== null);
       resolvedServiceAreas = Array.from(new Set([...resolvedServiceAreas, ...uniqueNames]));
+    }
+
+    // Validation: Prevent availability changes that conflict with existing future bookings
+    const futureBookings = await tx.booking.findMany({
+      where: {
+        cleanerId: userId,
+        date: { gte: startOfDay(new Date()) },
+        status: { in: [BookingStatus.PENDING, BookingStatus.CONFIRMED] },
+      },
+    });
+
+    if (futureBookings.length > 0) {
+      for (const booking of futureBookings) {
+        const bDate = new Date(booking.date);
+        const dayName = format(bDate, "EEE");
+
+        // 1. Check working days
+        if (data.workingDays && !data.workingDays.includes(dayName)) {
+          throw new ApiError(
+            httpStatus.CONFLICT,
+            `Cannot remove ${dayName} from working days. You have an active booking on ${format(bDate, "yyyy-MM-dd")}. Please cancel it first.`
+          );
+        }
+
+        // 2. Check block off dates
+        if (data.blockOffDates) {
+          const isBlocked = data.blockOffDates.some(
+            (d) => format(new Date(d), "yyyy-MM-dd") === format(bDate, "yyyy-MM-dd")
+          );
+          if (isBlocked) {
+            throw new ApiError(
+              httpStatus.CONFLICT,
+              `Cannot block off ${format(bDate, "yyyy-MM-dd")}. You have an active booking on this date. Please cancel it first.`
+            );
+          }
+        }
+
+        // 3. Check working hours
+        if (data.workFrom || data.workTo) {
+          const bStart = parse(booking.startTime, "HH:mm", bDate);
+          const bEnd = parse(booking.endTime, "HH:mm", bDate);
+          const newFrom = parse(data.workFrom || user.cleanerProfile!.workFrom || "08:00", "HH:mm", bDate);
+          const newTo = parse(data.workTo || user.cleanerProfile!.workTo || "18:00", "HH:mm", bDate);
+
+          if (isBefore(bStart, newFrom) || isAfter(bEnd, newTo)) {
+            throw new ApiError(
+              httpStatus.CONFLICT,
+              `Cannot change working hours to ${format(newFrom, "HH:mm")}-${format(
+                newTo,
+                "HH:mm"
+              )}. Conflicting booking on ${format(bDate, "yyyy-MM-dd")} at ${booking.startTime}-${booking.endTime}.`
+            );
+          }
+        }
+      }
     }
 
     const updatedProfile = await tx.cleanerProfile.update({

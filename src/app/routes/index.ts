@@ -6,6 +6,8 @@ import { AvailabilityRoutes } from "../modules/Cleaner/Availability/availability
 import { ServiceAreaRoutes } from "../modules/Admin/ServiceArea/serviceArea.route";
 
 import { CleanerService_Routes } from "../modules/Cleaner/Service/service.route";
+import { BookingRoutes } from "../modules/Booking/booking.route";
+import { PaymentRoutes } from "../modules/Payment/payment.route";
 
 const router = express.Router();
 
@@ -33,6 +35,14 @@ const moduleRoutes = [
   {
     path: "/service-areas",
     route: ServiceAreaRoutes,
+  },
+  {
+    path: "/bookings",
+    route: BookingRoutes,
+  },
+  {
+    path: "/payments",
+    route: PaymentRoutes,
   },
 ];
 

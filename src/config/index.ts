@@ -52,6 +52,11 @@ const config = {
   google: {
     client_id: process.env.GOOGLE_CLIENT_ID as string,
   },
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY as string,
+    publishableKey: process.env.STRIPE_PUBLISHABLE_KEY as string,
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET as string,
+  },
 };
 
 export default config;

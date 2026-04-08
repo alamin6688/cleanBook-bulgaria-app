@@ -91,7 +91,11 @@ const updateCleanerDetails = async (userId: string, data: IUpdateCleanerProfileI
 
   return await prisma.$transaction(async (tx) => {
     // Validation & ID Resolution
-    const normalize = (s: string) => s.toLowerCase().trim().replace(/[\s_-]+/g, " ");
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .trim()
+        .replace(/[\s_-]+/g, " ");
 
     const propertyInputs = (data as any).propertyTypes || (data as any).propertyTypeIds || [];
     if (propertyInputs.length > 0) {
@@ -249,7 +253,8 @@ const getNearbyCleaners = async (userLat: number, userLng: number, radiusKm: num
 const enrichCleanerProfile = async (cleanerProfile: any) => {
   if (!cleanerProfile) return null;
 
-  const [propertyTypes, additionalServices] = await Promise.all([
+  // 1. Fetch related categories in parallel
+  const [propertyTypes, additionalServices, serviceCategories] = await Promise.all([
     cleanerProfile.propertyTypeIds?.length
       ? prisma.propertyCategory.findMany({
           where: { id: { in: cleanerProfile.propertyTypeIds } },
@@ -262,16 +267,24 @@ const enrichCleanerProfile = async (cleanerProfile: any) => {
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
+    prisma.serviceCategory.findMany({
+      where: { id: { in: (cleanerProfile.services ?? []).map((s: any) => s.serviceCategoryId) } },
+      select: { id: true, banner: true },
+    }),
   ]);
 
-  // Services are already pre-selected as { id, name, pricePerHour } from the DB query
-  const enrichedServices = (cleanerProfile.services ?? []).map((s: any) => ({
-    id: s.id,
-    name: s.name,
-    pricePerHour: s.pricePerHour,
-  }));
+  // 2. Map services and attach the banner from parent category
+  const enrichedServices = (cleanerProfile.services ?? []).map((s: any) => {
+    const parentCategory = serviceCategories.find((cat) => cat.id === s.serviceCategoryId);
+    return {
+      id: s.serviceCategoryId,
+      name: s.name,
+      pricePerHour: s.pricePerHour,
+      banner: parentCategory?.banner || null,
+    };
+  });
 
-  // Strip internal DB fields, raw ID arrays, duplicate location fields, and static enums
+  // Strip internal DB fields, raw ID arrays, and duplicate location fields
   const {
     propertyTypeIds,
     additionalServiceIds,
@@ -281,7 +294,6 @@ const enrichCleanerProfile = async (cleanerProfile: any) => {
     city,
     latitude,
     longitude,
-    workType,     // static enum — excluded
     ...rest
   } = cleanerProfile;
 
@@ -340,6 +352,7 @@ const getUserById = async (id: string) => {
           services: {
             select: {
               id: true,
+              serviceCategoryId: true,
               name: true,
               pricePerHour: true,
             },
@@ -385,7 +398,11 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
 
     // Validation & ID Resolution for Cleaner Profile fields
     if (user.role === "CLEANER") {
-      const normalize = (s: string) => s.toLowerCase().trim().replace(/[\s_-]+/g, " ");
+      const normalize = (s: string) =>
+        s
+          .toLowerCase()
+          .trim()
+          .replace(/[\s_-]+/g, " ");
 
       const propertyInputs = (data as any).propertyTypes || (data as any).propertyTypeIds || [];
       if (propertyInputs.length > 0) {
@@ -474,21 +491,21 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
           blockOffDates: data.blockOffDates,
         },
         update: {
-          displayName: data.displayName,
-          bio: data.bio,
-          profilePhoto: data.profilePhoto,
-          address: data.address,
-          city: data.city,
-          latitude: data.latitude,
-          longitude: data.longitude,
-          workingDays: data.workingDays,
-          serviceAreas: data.serviceAreas,
-          propertyTypeIds: data.propertyTypeIds,
-          additionalServiceIds: data.additionalServiceIds,
-          workFrom: data.workFrom,
-          workTo: data.workTo,
-          workType: data.workType,
-          blockOffDates: data.blockOffDates,
+          displayName: data.displayName !== undefined ? data.displayName : undefined,
+          bio: data.bio !== undefined ? data.bio : undefined,
+          profilePhoto: data.profilePhoto !== undefined ? data.profilePhoto : undefined,
+          address: data.address !== undefined ? data.address : undefined,
+          city: data.city !== undefined ? data.city : undefined,
+          latitude: data.latitude !== undefined ? data.latitude : undefined,
+          longitude: data.longitude !== undefined ? data.longitude : undefined,
+          workingDays: data.workingDays !== undefined ? data.workingDays : undefined,
+          serviceAreas: data.serviceAreas !== undefined ? data.serviceAreas : undefined,
+          propertyTypeIds: data.propertyTypeIds !== undefined ? data.propertyTypeIds : undefined,
+          additionalServiceIds: data.additionalServiceIds !== undefined ? data.additionalServiceIds : undefined,
+          workFrom: data.workFrom !== undefined ? data.workFrom : undefined,
+          workTo: data.workTo !== undefined ? data.workTo : undefined,
+          workType: data.workType !== undefined ? data.workType : undefined,
+          blockOffDates: data.blockOffDates !== undefined ? data.blockOffDates : undefined,
         },
       });
 
@@ -509,18 +526,25 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
       }
     }
 
-    const result = await tx.user.findUnique({
+    // Explicitly refetch the latest data with all relations
+    const finalUser = await tx.user.findUnique({
       where: { id: userId },
       include: {
         cleanerProfile: {
-          include: { services: true },
+          include: {
+            services: true,
+          },
         },
       },
     });
 
+    if (!finalUser) {
+      throw new ApiError(httpStatus.NOT_FOUND, "User not found after update");
+    }
+
     return {
-      ...result,
-      cleanerProfile: await enrichCleanerProfile(result?.cleanerProfile),
+      ...finalUser,
+      cleanerProfile: await enrichCleanerProfile(finalUser.cleanerProfile),
     };
   });
 };
