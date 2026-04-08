@@ -10,7 +10,7 @@ router.get("/profile", auth("CUSTOMER", "CLEANER", "ADMIN"), UserController.getP
 
 router.get("/:id", auth("CUSTOMER", "CLEANER", "ADMIN"), UserController.getUserById);
 
-// router.get("/cleaners-nearby", auth("CUSTOMER", "CLEANER","ADMIN"), UserController.getNearbyCleaners);
+// router.get("/cleaners-nearby", auth("CUSTOMER", "CLEANER","ADMIN"), UserController.getNearbyCleaners); 
 
 router.patch(
   "/update-profile",

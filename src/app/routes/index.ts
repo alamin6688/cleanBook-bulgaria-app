@@ -8,6 +8,7 @@ import { ServiceAreaRoutes } from "../modules/Admin/ServiceArea/serviceArea.rout
 import { CleanerService_Routes } from "../modules/Cleaner/Service/service.route";
 import { BookingRoutes } from "../modules/Booking/booking.route";
 import { PaymentRoutes } from "../modules/Payment/payment.route";
+import { PopularServiceRoutes } from "../modules/PopularService/popularService.route";
 
 const router = express.Router();
 
@@ -43,6 +44,10 @@ const moduleRoutes = [
   {
     path: "/payments",
     route: PaymentRoutes,
+  },
+  {
+    path: "/popular-services",
+    route: PopularServiceRoutes,
   },
 ];
 
