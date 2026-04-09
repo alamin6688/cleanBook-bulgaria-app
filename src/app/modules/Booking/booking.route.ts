@@ -15,11 +15,22 @@ router.get(
   BookingController.getAvailableSlots
 );
 
-// Get cleaner availability pattern for calendar view
+// Discover available cleaners
 router.get(
-  "/availability/:cleanerId",
-  BookingController.getCleanerAvailability
+  "/available-cleaners",
+  RequestValidation.validateRequest(BookingValidation.getAvailableCleanersSchema),
+  BookingController.getAvailableCleaners
 );
+
+// Check price and availability for a specific cleaner and slot
+router.post(
+  "/check-availability",
+  RequestValidation.validateRequest(BookingValidation.checkAvailabilitySchema),
+  BookingController.checkAvailabilityAndPrice
+);
+
+// Get cleaner availability pattern for calendar view
+router.get("/availability/:cleanerId", BookingController.getCleanerAvailability);
 
 // Create a new booking
 router.post(

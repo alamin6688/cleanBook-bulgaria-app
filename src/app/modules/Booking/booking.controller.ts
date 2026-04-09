@@ -114,6 +114,28 @@ const getCleanerAvailability = catchAsync(async (req: Request, res: Response) =>
   });
 });
 
+const checkAvailabilityAndPrice = catchAsync(async (req: Request, res: Response) => {
+  const result = await BookingService.checkAvailabilityAndPrice(req.body);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Availability checked and price calculated successfully",
+    data: result,
+  });
+});
+
+const getAvailableCleaners = catchAsync(async (req: Request, res: Response) => {
+  const result = await BookingService.getAvailableCleaners(req.query);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Available cleaners retrieved successfully",
+    data: result,
+  });
+});
+
 export const BookingController = {
   getAvailableSlots,
   getCleanerAvailability,
@@ -123,4 +145,6 @@ export const BookingController = {
   getBookingForPayment,
   confirmBooking,
   updatePaymentStatus,
+  checkAvailabilityAndPrice,
+  getAvailableCleaners,
 };

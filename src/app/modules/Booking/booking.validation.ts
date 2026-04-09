@@ -41,8 +41,36 @@ const updatePaymentStatusSchema = z.object({
   }),
 });
 
+const checkAvailabilitySchema = z.object({
+  body: z.object({
+    cleanerId: z.string().nonempty({ message: "cleanerId is required" }),
+    serviceCategoryId: z.string().nonempty({ message: "serviceCategoryId is required" }),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}/, { message: "Invalid date format, expect YYYY-MM-DD" }),
+    startTime: z.string().regex(/^\d{1,2}:\d{2}(\s?[AaPp][Mm])?$/, { message: "Start time format invalid (use HH:mm AM/PM)" }),
+    endTime: z.string().regex(/^\d{1,2}:\d{2}(\s?[AaPp][Mm])?$/, { message: "End time format invalid (use HH:mm AM/PM)" }),
+  }),
+});
+
+const getAvailableCleanersSchema = z.object({
+  query: z.object({
+    searchTerm: z.string().optional(),
+    serviceCategoryIds: z.union([z.string(), z.array(z.string())]).optional(),
+    propertyCategoryId: z.string().optional(),
+    minPrice: z.string().optional(),
+    maxPrice: z.string().optional(),
+    minRating: z.string().optional(),
+    latitude: z.string().optional(),
+    longitude: z.string().optional(),
+    radius: z.string().optional(),
+    city: z.string().optional(),
+    sortBy: z.enum(["rating_high_to_low", "rating_low_to_high", "nearest", "price_low_to_high"]).optional(),
+  }),
+});
+
 export const BookingValidation = {
   createBookingSchema,
   getSlotsSchema,
   updatePaymentStatusSchema,
+  checkAvailabilitySchema,
+  getAvailableCleanersSchema,
 };
