@@ -39,7 +39,7 @@ const updateCleanerProfileZodSchema = z.object({
       .min(1),
     workFrom: z.string().optional(),
     workTo: z.string().optional(),
-    workType: z.enum(["HALF_DAY", "FULL_DAY", "QUARTER_DAY"]).optional(),
+
     blockOffDates: z
       .array(
         z.coerce.date().refine((date) => {
@@ -76,7 +76,7 @@ const saveProfileZodSchema = z.object({
       .optional(),
     workFrom: z.string().optional(),
     workTo: z.string().optional(),
-    workType: z.enum(["HALF_DAY", "FULL_DAY", "QUARTER_DAY"]).optional(),
+
     blockOffDates: z
       .array(
         z.coerce.date().refine(
@@ -100,7 +100,7 @@ const updateAvailabilityZodSchema = z.object({
     serviceAreas: z.array(z.string()).optional(),
     workFrom: z.string().optional(),
     workTo: z.string().optional(),
-    workType: z.enum(["HALF_DAY", "FULL_DAY", "QUARTER_DAY"]).optional(),
+
     blockOffDates: z
       .array(
         z.coerce.date().refine(

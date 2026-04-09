@@ -27,7 +27,7 @@ export type IUpdateCleanerProfileInput = {
   }[];
   workFrom?: string;
   workTo?: string;
-  workType?: "HALF_DAY" | "FULL_DAY" | "QUARTER_DAY";
+
   blockOffDates?: Date[];
 };
 
@@ -56,6 +56,6 @@ export type IUpdateProfileInput = {
   }[];
   workFrom?: string;
   workTo?: string;
-  workType?: "HALF_DAY" | "FULL_DAY" | "QUARTER_DAY";
+
   blockOffDates?: Date[];
 };

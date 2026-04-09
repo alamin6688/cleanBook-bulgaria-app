@@ -1,9 +1,8 @@
-import { WorkType } from "@prisma/client";
+
 
 export interface IBookingSlotQuery {
   cleanerId: string;
   date: string; // YYYY-MM-DD
-  duration?: WorkType;
 }
 
 export interface ICreateBooking {
@@ -14,8 +13,7 @@ export interface ICreateBooking {
   spaceSqft?: number;
   date: string; // YYYY-MM-DD format Date string or ISO string
   startTime: string; // HH:mm format
-  endTime?: string; // HH:mm format
-  workType: WorkType;
+  endTime: string; // HH:mm format
   address?: string;
   city?: string;
   latitude?: number;

@@ -171,7 +171,7 @@ const updateCleanerDetails = async (userId: string, data: IUpdateCleanerProfileI
         additionalServiceIds: data.additionalServiceIds,
         workFrom: data.workFrom,
         workTo: data.workTo,
-        workType: data.workType,
+
         blockOffDates: data.blockOffDates,
       },
     });
@@ -348,7 +348,7 @@ const getUserById = async (id: string) => {
           avgRating: true,
           totalReviews: true,
           totalJobs: true,
-          // workType intentionally omitted — static enum, stripped in enrichCleanerProfile
+
           services: {
             select: {
               id: true,
@@ -487,7 +487,7 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
           additionalServiceIds: data.additionalServiceIds,
           workFrom: data.workFrom,
           workTo: data.workTo,
-          workType: data.workType,
+
           blockOffDates: data.blockOffDates,
         },
         update: {
@@ -504,7 +504,7 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
           additionalServiceIds: data.additionalServiceIds !== undefined ? data.additionalServiceIds : undefined,
           workFrom: data.workFrom !== undefined ? data.workFrom : undefined,
           workTo: data.workTo !== undefined ? data.workTo : undefined,
-          workType: data.workType !== undefined ? data.workType : undefined,
+
           blockOffDates: data.blockOffDates !== undefined ? data.blockOffDates : undefined,
         },
       });

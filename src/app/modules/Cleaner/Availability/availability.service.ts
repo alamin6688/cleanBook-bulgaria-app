@@ -135,7 +135,7 @@ const updateAvailability = async (userId: string, data: IUpdateAvailabilityInput
         workingDays: data.workingDays,
         workFrom: data.workFrom,
         workTo: data.workTo,
-        workType: data.workType,
+
         blockOffDates: data.blockOffDates,
         // If the user provided postcodes or serviceAreas, we overwrite the field. 
         // Otherwise, we leave it alone (undefined).
@@ -154,7 +154,7 @@ const getAvailability = async (userId: string) => {
       workingDays: true,
       workFrom: true,
       workTo: true,
-      workType: true,
+
       blockOffDates: true,
       serviceAreas: true,
     },

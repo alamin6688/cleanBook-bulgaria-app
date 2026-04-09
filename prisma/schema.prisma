@@ -71,7 +71,6 @@ model CleanerProfile {
   workingDays   String[] // ["Mon", "Tue", "Wed", "Thu"]
   workFrom      String? // "08:00"
   workTo        String? // "18:00"
-  workType      WorkType   @default(FULL_DAY)
   blockOffDates DateTime[]
 
   // Preferences
@@ -139,11 +138,6 @@ model ServiceArea {
   updatedAt DateTime @updatedAt
 }
 
-enum WorkType {
-  HALF_DAY
-  FULL_DAY
-  QUARTER_DAY
-}
 
 enum BookingStatus {
   PENDING
@@ -173,7 +167,6 @@ model Booking {
   date      DateTime
   startTime String // "HH:mm" format (24-hour)
   endTime   String // "HH:mm" format (24-hour)
-  workType  WorkType
 
   address   String?
   city      String?

@@ -2,7 +2,7 @@ import httpStatus from "http-status";
 import ApiError from "../../../errors/apiError";
 import prisma from "../../../lib/prisma";
 import { IBookingSlotQuery, ICreateBooking } from "./booking.interface";
-import { BookingStatus, WorkType } from "@prisma/client";
+import { BookingStatus } from "@prisma/client";
 import {
   addMinutes,
   addDays,
@@ -12,13 +12,10 @@ import {
   parse,
   startOfDay,
   isWithinInterval,
+  differenceInMinutes,
 } from "date-fns";
 
-const WORK_TYPE_HOURS: Record<WorkType, number> = {
-  FULL_DAY: 8,
-  HALF_DAY: 4,
-  QUARTER_DAY: 2,
-};
+
 
 const parseTime = (timeStr: string, refDate: Date) => {
   return timeStr.toLowerCase().includes('m') 
@@ -71,7 +68,7 @@ const getNextAvailableDates = async (
 };
 
 const getAvailableSlots = async (query: IBookingSlotQuery) => {
-  const { cleanerId, date, duration } = query;
+  const { cleanerId, date } = query;
   const bookingDate = new Date(date);
 
   const cleaner = await prisma.user.findFirst({
@@ -120,8 +117,7 @@ const getAvailableSlots = async (query: IBookingSlotQuery) => {
   const workTo = profile.workTo || "06:00 PM";
   const intervalMinutes = 60; // Slots start every hour
 
-  const requestedWorkType = duration || profile.workType;
-  const slotDurationHours = WORK_TYPE_HOURS[requestedWorkType];
+  const slotDurationHours = 1; // Default 1 hour booking slots
 
   const startTimeLimit = parseTime(workFrom, bookingDate);
   const endTimeLimit = parseTime(workTo, bookingDate);
@@ -164,7 +160,6 @@ const getAvailableSlots = async (query: IBookingSlotQuery) => {
       endTime: slotEndStr,
       isAvailable,
       status,
-      workType: requestedWorkType,
       duration: slotDurationHours,
     });
 
@@ -181,7 +176,6 @@ const getAvailableSlots = async (query: IBookingSlotQuery) => {
   return {
     cleanerId,
     date,
-    workType: requestedWorkType,
     workFrom,
     workTo,
     blockOffDates: profile.blockOffDates,
@@ -197,7 +191,7 @@ const createBooking = async (userId: string, data: ICreateBooking) => {
     propertyCategoryId,
     date,
     startTime,
-    workType,
+    endTime,
     rooms,
     spaceSqft,
     address,
@@ -258,10 +252,14 @@ const createBooking = async (userId: string, data: ICreateBooking) => {
   }
 
   // 3. Check Duration and End Time
-  const slotDurationHours = WORK_TYPE_HOURS[workType];
   const startDateTime = parseTime(startTime, bookingDate);
-  const endDateTime = addMinutes(startDateTime, slotDurationHours * 60);
-  const endTime = formatTime(endDateTime);
+  const endDateTime = parseTime(endTime, bookingDate);
+  
+  if (!isAfter(endDateTime, startDateTime)) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "End time must be after start time");
+  }
+  
+  const slotDurationHours = differenceInMinutes(endDateTime, startDateTime) / 60;
 
   const workFromLimit = parseTime(profile.workFrom || "08:00 AM", bookingDate);
   const workToLimit = parseTime(profile.workTo || "06:00 PM", bookingDate);
@@ -316,7 +314,6 @@ const createBooking = async (userId: string, data: ICreateBooking) => {
       date: bookingDate,
       startTime,
       endTime,
-      workType,
       address,
       city,
       latitude,
@@ -489,7 +486,6 @@ const getBookingForPayment = async (bookingId: string, userId: string) => {
     ...booking,
     formattedDate: format(new Date(booking.date), "EEEE, MMMM d, yyyy"),
     duration: `${booking.startTime} - ${booking.endTime}`,
-    workTypeLabel: booking.workType.replace(/_/g, " "),
   };
 };
 
@@ -598,7 +594,6 @@ const getCleanerAvailability = async (cleanerId: string) => {
     workFrom: profile.workFrom || "08:00 AM",
     workTo: profile.workTo || "06:00 PM",
     blockOffDates: profile.blockOffDates,
-    workType: profile.workType,
     availableDates: availabilityData.dates,
   };
 };
