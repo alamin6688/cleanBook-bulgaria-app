@@ -48,7 +48,7 @@ async function main() {
       email: "user@example.com",
       name: "Regular User",
       password: userPassword,
-      role: Role.USER,
+      role: Role.CUSTOMER,
       isEmailVerified: true,
       isActive: true,
     },

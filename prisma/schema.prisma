@@ -47,6 +47,8 @@ model User {
 
   customerBookings Booking[] @relation("CustomerBookings")
   cleanerBookings  Booking[] @relation("CleanerBookings")
+
+  customerReviews Review[] @relation("CustomerReviews")
 }
 
 model CleanerProfile {
@@ -83,6 +85,7 @@ model CleanerProfile {
   totalJobs    Int   @default(0)
 
   services CleanerService[]
+  reviews  Review[]
 }
 
 model CleanerService {
@@ -95,6 +98,25 @@ model CleanerService {
 
   name         String
   pricePerHour Float
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Review {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId String   @unique @db.ObjectId
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+
+  customerId String @db.ObjectId
+  customer   User   @relation("CustomerReviews", fields: [customerId], references: [id])
+
+  cleanerProfileId String         @db.ObjectId
+  cleanerProfile   CleanerProfile @relation(fields: [cleanerProfileId], references: [id])
+
+  rating      Float
+  description String?
+  tags        String[] // ["Punctual", "Thorough", "Polite", "Professional"]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -142,8 +164,11 @@ model ServiceArea {
 enum BookingStatus {
   PENDING
   CONFIRMED
+  IN_PROGRESS
+  COMPLETION_REQUESTED
+  COMPLETE
   CANCELLED
-  COMPLETED
+  RESCHEDULE_REQUESTED
 }
 
 model Booking {
@@ -183,8 +208,25 @@ model Booking {
   status          BookingStatus @default(PENDING)
   paymentStatus   String        @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
 
+  // Reschedule Fields
+  rescheduleDate      DateTime?
+  rescheduleStartTime String?
+  rescheduleEndTime   String?
+  rescheduleReason    String?
+  rescheduleNote      String?
+
+  // Cancellation Fields
+  cancelReason String?
+  cancelNote   String?
+
+  // Completion Evidence
+  completionPhotos String[] @default([])
+  completionNote   String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  review Review?
 }
 
 model OtpToken {
@@ -212,3 +254,4 @@ model RefreshToken {
 
   @@index([userId])
 }
+

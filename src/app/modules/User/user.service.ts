@@ -254,16 +254,10 @@ const enrichCleanerProfile = async (cleanerProfile: any) => {
   if (!cleanerProfile) return null;
 
   // 1. Fetch related categories in parallel
-  const [propertyTypes, additionalServices, serviceCategories] = await Promise.all([
+  const [propertyTypes, serviceCategories] = await Promise.all([
     cleanerProfile.propertyTypeIds?.length
       ? prisma.propertyCategory.findMany({
           where: { id: { in: cleanerProfile.propertyTypeIds } },
-          select: { id: true, name: true },
-        })
-      : Promise.resolve([]),
-    cleanerProfile.additionalServiceIds?.length
-      ? prisma.additionalServiceCategory.findMany({
-          where: { id: { in: cleanerProfile.additionalServiceIds } },
           select: { id: true, name: true },
         })
       : Promise.resolve([]),
@@ -300,7 +294,6 @@ const enrichCleanerProfile = async (cleanerProfile: any) => {
   return {
     ...rest,
     propertyTypes,
-    additionalServices,
     services: enrichedServices,
   };
 };
@@ -355,6 +348,26 @@ const getUserById = async (id: string) => {
               serviceCategoryId: true,
               name: true,
               pricePerHour: true,
+            },
+          },
+          reviews: {
+            select: {
+              id: true,
+              rating: true,
+              description: true,
+              tags: true,
+              createdAt: true,
+              customer: {
+                select: {
+                  name: true,
+                  avatar: true,
+                  email: true,
+                  
+                },
+              },
+            },
+            orderBy: {
+              createdAt: "desc",
             },
           },
         },
@@ -533,6 +546,14 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
         cleanerProfile: {
           include: {
             services: true,
+            reviews: {
+              include: {
+                customer: {
+                  select: { name: true, avatar: true },
+                },
+              },
+              orderBy: { createdAt: "desc" },
+            },
           },
         },
       },

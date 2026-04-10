@@ -16,11 +16,11 @@ const getStripeInstance = () => {
   }
 
   return new Stripe(config.stripe.secretKey, {
-    apiVersion: "2023-10-16",
+    apiVersion: "2026-03-25.dahlia" as any,
   });
 };
 
-let stripe: Stripe | null = null;
+let stripe: any = null;
 
 const initializeStripe = () => {
   if (!stripe) {
@@ -178,7 +178,7 @@ const handlePaymentFailure = async (paymentIntentId: string, reason: string) => 
   }
 };
 
-const verifyWebhookSignature = (body: string, signature: string): Stripe.Event => {
+const verifyWebhookSignature = (body: string, signature: string): any => {
   try {
     const stripeInstance = initializeStripe();
     const event = stripeInstance.webhooks.constructEvent(body, signature, config.stripe.webhookSecret);

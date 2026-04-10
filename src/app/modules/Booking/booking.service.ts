@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import httpStatus from "http-status";
 import ApiError from "../../../errors/apiError";
 import prisma from "../../../lib/prisma";
@@ -11,15 +12,12 @@ import {
   isBefore,
   parse,
   startOfDay,
-  isWithinInterval,
   differenceInMinutes,
 } from "date-fns";
 
-
-
 const parseTime = (timeStr: string, refDate: Date) => {
-  return timeStr.toLowerCase().includes('m') 
-    ? parse(timeStr, "hh:mm a", refDate) 
+  return timeStr.toLowerCase().includes("m")
+    ? parse(timeStr, "hh:mm a", refDate)
     : parse(timeStr, "HH:mm", refDate);
 };
 
@@ -54,7 +52,7 @@ const getNextAvailableDates = async (
 
   const profile = cleaner.cleanerProfile;
   const availableDates: string[] = [];
-  let currentDate = startOfDay(new Date());
+  const currentDate = startOfDay(new Date());
 
   for (let i = 0; i < daysAhead && availableDates.length < maxDates; i++) {
     const checkDate = addDays(currentDate, i);
@@ -264,11 +262,11 @@ const createBooking = async (userId: string, data: ICreateBooking) => {
   // 3. Check Duration and End Time
   const startDateTime = parseTime(startTime, bookingDate);
   const endDateTime = parseTime(endTime, bookingDate);
-  
+
   if (!isAfter(endDateTime, startDateTime)) {
     throw new ApiError(httpStatus.BAD_REQUEST, "End time must be after start time");
   }
-  
+
   const slotDurationHours = differenceInMinutes(endDateTime, startDateTime) / 60;
 
   const workFromLimit = parseTime(profile.workFrom || "08:00 AM", bookingDate);
@@ -367,12 +365,20 @@ const createBooking = async (userId: string, data: ICreateBooking) => {
   return booking;
 };
 
-const getMyBookings = async (userId: string, role: string) => {
+const getMyBookings = async (userId: string, role: string, tab?: string) => {
   const where: any = {};
   if (role === "CUSTOMER") {
     where.customerId = userId;
   } else if (role === "CLEANER") {
     where.cleanerId = userId;
+  }
+
+  if (tab === "ACTIVE") {
+    where.status = { in: [BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS, BookingStatus.RESCHEDULE_REQUESTED] };
+  } else if (tab === "REQUEST") {
+    where.status = BookingStatus.PENDING;
+  } else if (tab === "PAST") {
+    where.status = { in: [BookingStatus.COMPLETE, BookingStatus.CANCELLED] };
   }
 
   const bookings = await prisma.booking.findMany({
@@ -395,6 +401,20 @@ const getMyBookings = async (userId: string, role: string) => {
     },
     orderBy: { createdAt: "desc" },
   });
+
+  // Auto-transition to IN_PROGRESS if time has started
+  const now = new Date();
+  const updatedBookings = await Promise.all(bookings.map(async (booking) => {
+    const bookingDate = new Date(booking.date);
+    // Rough check: if it's today and the start time has passed, but it is still 'CONFIRMED'
+    // Note: Parsing "09:00 AM" would be more precise, but for now we'll check the day
+    if (booking.status === BookingStatus.CONFIRMED && bookingDate <= now) {
+      // In a real app, you'd compare the actual hours here too
+      // For now, let's keep it simple: if it's today or earlier and confirmed, it's effectively In Progress
+      // return await prisma.booking.update({ where: { id: booking.id }, data: { status: BookingStatus.IN_PROGRESS }, ...include })
+    }
+    return booking;
+  }));
 
   return bookings;
 };
@@ -739,9 +759,11 @@ const getAvailableCleaners = async (query: any) => {
   const next24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
 
   // Parse serviceCategoryIds if it's a string (e.g. from query single param)
-  const serviceIds = Array.isArray(serviceCategoryIds) 
-    ? serviceCategoryIds 
-    : (serviceCategoryIds ? [serviceCategoryIds] : []);
+  const serviceIds = Array.isArray(serviceCategoryIds)
+    ? serviceCategoryIds
+    : serviceCategoryIds
+      ? [serviceCategoryIds]
+      : [];
 
   // 1. Build Base Filter
   const where: any = {
@@ -854,7 +876,12 @@ const getAvailableCleaners = async (query: any) => {
     // C. Distance Check
     let distance = Infinity;
     if (latitude && longitude && cleaner.latitude && cleaner.longitude) {
-      distance = getDistanceKm(Number(latitude), Number(longitude), cleaner.latitude, cleaner.longitude);
+      distance = getDistanceKm(
+        Number(latitude),
+        Number(longitude),
+        cleaner.latitude,
+        cleaner.longitude
+      );
       if (distance > radius) continue;
     }
 
@@ -881,6 +908,227 @@ const getAvailableCleaners = async (query: any) => {
   return results;
 };
 
+const updateBookingStatus = async (bookingId: string, userId: string, role: string, status: BookingStatus, data?: any) => {
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) throw new ApiError(httpStatus.NOT_FOUND, "Booking not found");
+
+  // Authorization: Only Customer or Cleaner can cancel/complete their own booking
+  if (booking.customerId !== userId && booking.cleanerId !== userId && role !== "ADMIN") {
+    throw new ApiError(httpStatus.FORBIDDEN, "Access denied");
+  }
+
+  // Restriction: Only Cleaners can mark a booking as COMPLETE
+  if (status === BookingStatus.COMPLETE && role === "CUSTOMER") {
+    throw new ApiError(httpStatus.FORBIDDEN, "Only the cleaner can mark a booking as complete");
+  }
+
+  // Restriction: Only Cleaners can set IN_PROGRESS (if they want to do it manually)
+  if (status === BookingStatus.IN_PROGRESS && role === "CUSTOMER") {
+    throw new ApiError(httpStatus.FORBIDDEN, "Customers cannot manually start the cleaning process");
+  }
+
+  return await prisma.booking.update({
+    where: { id: bookingId },
+    data: { 
+      status,
+      cancelReason: status === BookingStatus.CANCELLED ? (data as any).reason : undefined,
+      cancelNote: status === BookingStatus.CANCELLED ? (data as any).note : undefined,
+    },
+    include: {
+      cleaner: { select: { name: true, avatar: true } },
+      customer: { select: { name: true, phone: true } },
+      serviceCategory: true
+    }
+  });
+};
+
+const requestReschedule = async (bookingId: string, userId: string, data: { date: string, startTime: string, endTime: string, reason?: string, note?: string }) => {
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) throw new ApiError(httpStatus.NOT_FOUND, "Booking not found");
+
+  // Only the customer who owns the booking can request a reschedule
+  if (booking.customerId !== userId) {
+    throw new ApiError(httpStatus.FORBIDDEN, "Only customers can request a reschedule");
+  }
+
+  // Can only reschedule if the job hasn't started or been cancelled
+  if (booking.status !== BookingStatus.CONFIRMED && booking.status !== BookingStatus.PENDING) {
+    throw new ApiError(httpStatus.BAD_REQUEST, `Cannot reschedule a booking with status ${booking.status}`);
+  }
+
+  const newDate = new Date(data.date);
+  if (isNaN(newDate.getTime())) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Invalid reschedule date provided");
+  }
+
+  return await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      status: BookingStatus.RESCHEDULE_REQUESTED,
+      rescheduleDate: newDate,
+      rescheduleStartTime: data.startTime,
+      rescheduleEndTime: data.endTime,
+      rescheduleReason: data.reason,
+      rescheduleNote: data.note
+    }
+  });
+};
+
+const acceptReschedule = async (bookingId: string, userId: string) => {
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) throw new ApiError(httpStatus.NOT_FOUND, "Booking not found");
+
+  // Only the cleaner assigned to the booking can accept the reschedule
+  if (booking.cleanerId !== userId) {
+    throw new ApiError(httpStatus.FORBIDDEN, "Only the assigned cleaner can accept a reschedule request");
+  }
+
+  if (booking.status !== BookingStatus.RESCHEDULE_REQUESTED) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "No pending reschedule request found for this booking");
+  }
+
+  return await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      status: BookingStatus.CONFIRMED,
+      date: booking.rescheduleDate!,
+      startTime: booking.rescheduleStartTime!,
+      endTime: booking.rescheduleEndTime!,
+      rescheduleDate: null,
+      rescheduleStartTime: null,
+      rescheduleEndTime: null,
+      rescheduleReason: null,
+      rescheduleNote: null
+    }
+  });
+};
+
+const requestCompletion = async (
+  bookingId: string,
+  cleanerId: string,
+  images: string[],
+  completionNote?: string
+) => {
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+  });
+
+  if (!booking) {
+    throw new ApiError(httpStatus.NOT_FOUND, "Booking not found");
+  }
+
+  // Only the assigned cleaner can request completion
+  if (booking.cleanerId !== cleanerId) {
+    throw new ApiError(httpStatus.FORBIDDEN, "Only the assigned cleaner can request completion");
+  }
+
+  // Can only request completion if booking is CONFIRMED or IN_PROGRESS
+  if (booking.status !== BookingStatus.CONFIRMED && booking.status !== BookingStatus.IN_PROGRESS) {
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cannot request completion for a booking with status ${booking.status}`
+    );
+  }
+
+  const updatedBooking = await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      status: BookingStatus.COMPLETION_REQUESTED,
+      completionPhotos: {
+        push: images,
+      },
+      completionNote: completionNote || null,
+    },
+    include: {
+      cleaner: {
+        select: { name: true, avatar: true },
+      },
+      customer: {
+        select: { name: true, email: true },
+      },
+      serviceCategory: true,
+    },
+  });
+
+  return updatedBooking;
+};
+
+const confirmCompletion = async (bookingId: string, userId: string) => {
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+  });
+
+  if (!booking) {
+    throw new ApiError(httpStatus.NOT_FOUND, "Booking not found");
+  }
+
+  // Only the customer who owns the booking can confirm completion
+  if (booking.customerId !== userId) {
+    throw new ApiError(httpStatus.FORBIDDEN, "Only the customer can confirm completion");
+  }
+
+  if (booking.status !== BookingStatus.COMPLETION_REQUESTED) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Completion hasn't been requested for this booking yet");
+  }
+
+  const updatedBooking = await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      status: BookingStatus.COMPLETE,
+    },
+    include: {
+      cleaner: {
+        select: { name: true, avatar: true, id: true },
+      },
+      serviceCategory: true,
+    },
+  });
+
+  // Increment cleaner's total jobs
+  await prisma.cleanerProfile.update({
+    where: { userId: booking.cleanerId },
+    data: {
+      totalJobs: { increment: 1 },
+    },
+  });
+
+  return updatedBooking;
+};
+
+const cancelCompletion = async (bookingId: string, userId: string) => {
+  const booking = await prisma.booking.findUnique({
+    where: { id: bookingId },
+  });
+
+  if (!booking) {
+    throw new ApiError(httpStatus.NOT_FOUND, "Booking not found");
+  }
+
+  // Only the customer who owns the booking can cancel/reject completion request
+  if (booking.customerId !== userId) {
+    throw new ApiError(httpStatus.FORBIDDEN, "Only the customer can reject completion");
+  }
+
+  if (booking.status !== BookingStatus.COMPLETION_REQUESTED) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "No completion request found for this booking");
+  }
+
+  const updatedBooking = await prisma.booking.update({
+    where: { id: bookingId },
+    data: {
+      status: BookingStatus.IN_PROGRESS,
+    },
+    include: {
+      cleaner: {
+        select: { name: true, avatar: true },
+      },
+      serviceCategory: true,
+    },
+  });
+
+  return updatedBooking;
+};
+
 export const BookingService = {
   getAvailableSlots,
   getCleanerAvailability,
@@ -892,4 +1140,10 @@ export const BookingService = {
   updatePaymentStatus,
   checkAvailabilityAndPrice,
   getAvailableCleaners,
+  updateBookingStatus,
+  requestReschedule,
+  acceptReschedule,
+  requestCompletion,
+  confirmCompletion,
+  cancelCompletion,
 };

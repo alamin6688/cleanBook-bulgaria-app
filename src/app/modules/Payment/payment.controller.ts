@@ -8,7 +8,7 @@ import sendResponse from "../../../shared/sendResponse";
 
 const createPaymentIntent = catchAsync(async (req: Request, res: Response) => {
   const { bookingId } = req.params;
-  const userId = req.user.userId;
+  const userId = req.user.id;
 
   // Verify booking belongs to user
   const { booking } = await req.app.locals.prisma.booking.findUnique({
@@ -33,7 +33,7 @@ const createPaymentIntent = catchAsync(async (req: Request, res: Response) => {
   const amountInCents = Math.round(booking.totalCharge * 100);
 
   const result = await PaymentService.createPaymentIntent({
-    bookingId,
+    bookingId: bookingId as string,
     amount: amountInCents,
     currency: "usd",
     description: `Cleaning Service - ${booking.serviceCategory.name}`,
@@ -89,7 +89,7 @@ const handleWebhook = catchAsync(async (req: Request, res: Response) => {
 
 const refundPayment = catchAsync(async (req: Request, res: Response) => {
   const { bookingId } = req.params;
-  const userId = req.user.userId;
+  const userId = req.user.id;
 
   // Verify booking belongs to user
   const booking = await req.app.locals.prisma.booking.findUnique({

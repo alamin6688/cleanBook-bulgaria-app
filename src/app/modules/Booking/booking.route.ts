@@ -4,6 +4,7 @@ import auth from "../../middlewares/auth";
 import { Role } from "@prisma/client";
 import { BookingController } from "./booking.controller";
 import { BookingValidation } from "./booking.validation";
+import { imageUploader } from "../../../helpers/file_uploader/imageUploader";
 
 const router = express.Router();
 
@@ -54,6 +55,33 @@ router.post(
 //   RequestValidation.validateRequest(BookingValidation.updatePaymentStatusSchema),
 //   BookingController.updatePaymentStatus
 // );
+
+// Update booking status (confirm, complete, cancel, etc.)
+router.patch(
+  "/:id/status",
+  auth(Role.CUSTOMER, Role.CLEANER, Role.ADMIN, Role.SUPER_ADMIN),
+  BookingController.updateBookingStatus
+);
+
+// Request a reschedule
+router.patch("/:id/reschedule", auth(Role.CUSTOMER), BookingController.requestReschedule);
+
+// Accept a reschedule request
+router.patch("/:id/accept-reschedule", auth(Role.CLEANER), BookingController.acceptReschedule);
+
+// Request booking completion (Cleaner uploads images)
+router.patch(
+  "/:id/request-completion",
+  auth(Role.CLEANER),
+  imageUploader.single("image"),
+  BookingController.requestCompletion
+);
+
+// Confirm booking completion (Customer confirms)
+router.patch("/:id/confirm-completion", auth(Role.CUSTOMER), BookingController.confirmCompletion);
+
+// Reject booking completion (Customer rejects)
+router.patch("/:id/cancel-completion", auth(Role.CUSTOMER), BookingController.cancelCompletion);
 
 // Get all my bookings
 router.get(

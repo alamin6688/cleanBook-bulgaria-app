@@ -9,6 +9,7 @@ import { CleanerService_Routes } from "../modules/Cleaner/Service/service.route"
 import { BookingRoutes } from "../modules/Booking/booking.route";
 import { PaymentRoutes } from "../modules/Payment/payment.route";
 import { PopularServiceRoutes } from "../modules/PopularService/popularService.route";
+import { ReviewRoutes } from "../modules/Review/review.route";
 
 const router = express.Router();
 
@@ -48,6 +49,10 @@ const moduleRoutes = [
   {
     path: "/popular-services",
     route: PopularServiceRoutes,
+  },
+  {
+    path: "/reviews",
+    route: ReviewRoutes,
   },
 ];
 
