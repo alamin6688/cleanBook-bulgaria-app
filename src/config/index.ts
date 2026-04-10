@@ -47,7 +47,7 @@ const config = {
   rateLimit: {
     windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
     max: Number(process.env.RATE_LIMIT_MAX) || 100,
-    authMax: Number(process.env.RATE_LIMIT_AUTH_MAX) || 10,
+    authMax: Number(process.env.RATE_LIMIT_AUTH_MAX) || 15,
   },
   google: {
     client_id: process.env.GOOGLE_CLIENT_ID as string,

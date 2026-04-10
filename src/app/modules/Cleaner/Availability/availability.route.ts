@@ -6,7 +6,7 @@ import { AvailabilityController } from "./availability.controller";
 
 const router = express.Router();
 
-router.get("/", auth("CLEANER"), AvailabilityController.getAvailability); 
+router.get("/", auth("CLEANER"), AvailabilityController.getAvailability);
 
 router.patch(
   "/",

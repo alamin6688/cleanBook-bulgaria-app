@@ -49,10 +49,22 @@ const createReview = async (userId: string, data: IReview) => {
       },
       include: {
         customer: {
-          select: { name: true, avatar: true, email: true },
+          include: { customerProfile: true },
         },
       },
     });
+
+    // Flatten customer profile for API compatibility
+    const flatReview: any = { ...review };
+    if (flatReview.customer) {
+      flatReview.customer = {
+        id: flatReview.customer.id,
+        email: flatReview.customer.email,
+        name: flatReview.customer.customerProfile?.name || flatReview.customer.email.split("@")[0],
+        avatar: flatReview.customer.customerProfile?.profilePhoto,
+      };
+      delete (flatReview.customer as any).customerProfile;
+    }
 
     // Update Cleaner average rating and total reviews
     const profile = booking.cleaner.cleanerProfile!;
@@ -67,7 +79,7 @@ const createReview = async (userId: string, data: IReview) => {
       },
     });
 
-    return review;
+    return flatReview;
   });
 
   return result;
@@ -81,14 +93,28 @@ const getCleanerReviews = async (cleanerId: string) => {
 
   if (!profile) throw new ApiError(httpStatus.NOT_FOUND, "Cleaner profile not found");
 
-  return await prisma.review.findMany({
+  const reviews = await prisma.review.findMany({
     where: { cleanerProfileId: profile.id },
     include: {
       customer: {
-        select: { name: true, avatar: true, email: true },
+        include: { customerProfile: true },
       },
     },
     orderBy: { createdAt: "desc" },
+  });
+
+  return reviews.map((review: any) => {
+    const flatReview = { ...review };
+    if (flatReview.customer) {
+      flatReview.customer = {
+        id: flatReview.customer.id,
+        email: flatReview.customer.email,
+        name: flatReview.customer.customerProfile?.name || flatReview.customer.email.split("@")[0],
+        avatar: flatReview.customer.customerProfile?.profilePhoto,
+      };
+      delete flatReview.customer.customerProfile;
+    }
+    return flatReview;
   });
 };
 

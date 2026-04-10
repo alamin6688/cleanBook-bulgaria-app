@@ -81,26 +81,29 @@ const register = async (userData: IUser) => {
 
   const hashedPassword = await hashItem(userData.password);
 
-  const user = await prisma.$transaction(async (tx) => {
-    const newUser = await tx.user.create({
-      data: {
-        email: userData.email,
-        name: userData.name,
-        password: hashedPassword,
-        phone: userData.phone,
-        role: userData.role,
-      },
-      select: { id: true, name: true, email: true, role: true, isEmailVerified: true },
-    });
-
-    if (userData.role === "CLEANER") {
-      await tx.cleanerProfile.create({
-        data: { userId: newUser.id },
+    const user = await prisma.$transaction(async (tx) => {
+      const newUser = await tx.user.create({
+        data: {
+          email: userData.email,
+          password: hashedPassword,
+          phone: userData.phone,
+          role: userData.role,
+        },
+        select: { id: true, email: true, role: true, isEmailVerified: true },
       });
-    }
 
-    return newUser;
-  });
+      if (userData.role === "CLEANER") {
+        await tx.cleanerProfile.create({
+          data: { userId: newUser.id, displayName: userData.name },
+        });
+      } else if (userData.role === "CUSTOMER") {
+        await tx.customerProfile.create({
+          data: { userId: newUser.id, name: userData.name },
+        });
+      }
+
+      return { ...newUser, name: userData.name };
+    });
 
   // Send verification OTP
   await createAndSendOtp(user.email, OtpPurpose.EMAIL_VERIFICATION, user.id);
@@ -111,6 +114,7 @@ const register = async (userData: IUser) => {
 const login = async (loginData: ILoginInput) => {
   const user = await prisma.user.findUnique({
     where: { email: loginData.email },
+    include: { customerProfile: true, cleanerProfile: true },
   });
 
   if (!user) {
@@ -151,9 +155,16 @@ const login = async (loginData: ILoginInput) => {
     refreshToken,
     user: {
       id: user.id,
-      name: user.name,
+      name:
+        user.role === "CLEANER"
+          ? user.cleanerProfile?.displayName
+          : user.customerProfile?.name || user.email.split("@")[0],
       email: user.email,
       role: user.role,
+      avatar:
+        user.role === "CLEANER"
+          ? user.cleanerProfile?.profilePhoto
+          : user.customerProfile?.profilePhoto,
       isEmailVerified: user.isEmailVerified,
     },
   };
@@ -174,6 +185,7 @@ const loginWithGmail = async (idToken: string, role: Role = Role.CUSTOMER) => {
 
   let user = await prisma.user.findUnique({
     where: { email },
+    include: { customerProfile: true, cleanerProfile: true },
   });
 
   let isNewUser = false;
@@ -185,8 +197,6 @@ const loginWithGmail = async (idToken: string, role: Role = Role.CUSTOMER) => {
       const newUser = await tx.user.create({
         data: {
           email,
-          name: name || email.split("@")[0],
-          avatar: picture,
           role: role,
           isEmailVerified: true,
         },
@@ -194,12 +204,31 @@ const loginWithGmail = async (idToken: string, role: Role = Role.CUSTOMER) => {
 
       if (role === Role.CLEANER) {
         await tx.cleanerProfile.create({
-          data: { userId: newUser.id },
+          data: {
+            userId: newUser.id,
+            displayName: name || email.split("@")[0],
+            profilePhoto: picture,
+          },
+        });
+      } else if (role === Role.CUSTOMER) {
+        await tx.customerProfile.create({
+          data: {
+            userId: newUser.id,
+            name: name || email.split("@")[0],
+            profilePhoto: picture,
+          },
         });
       }
 
-      return newUser;
-    });
+      return await tx.user.findUnique({
+        where: { id: newUser.id },
+        include: { customerProfile: true, cleanerProfile: true },
+      });
+    }) as any;
+  }
+
+  if (!user) {
+    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, "Failed to create or retrieve user profile.");
   }
 
   if (!user.isActive) {
@@ -228,9 +257,15 @@ const loginWithGmail = async (idToken: string, role: Role = Role.CUSTOMER) => {
     user: {
       id: user.id,
       email: user.email,
-      name: user.name,
+      name:
+        user.role === "CLEANER"
+          ? user.cleanerProfile?.displayName
+          : user.customerProfile?.name || user.email.split("@")[0],
       role: user.role,
-      avatar: user.avatar,
+      avatar:
+        user.role === "CLEANER"
+          ? user.cleanerProfile?.profilePhoto
+          : user.customerProfile?.profilePhoto,
       onboardingCompleted: user.onboardingCompleted,
     },
   };
@@ -380,20 +415,32 @@ const getMe = async (id: string) => {
     where: { id },
     select: {
       id: true,
-      name: true,
       email: true,
       role: true,
       isEmailVerified: true,
       isActive: true,
       lastLogin: true,
       createdAt: true,
+      customerProfile: { select: { name: true, profilePhoto: true } },
+      cleanerProfile: { select: { displayName: true, profilePhoto: true } },
     },
   });
 
   if (!user) {
     throw new ApiError(httpStatus.NOT_FOUND, "User not found.");
   }
-  return user;
+
+  return {
+    ...user,
+    name:
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.displayName
+        : user.customerProfile?.name || user.email.split("@")[0],
+    avatar:
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.profilePhoto
+        : user.customerProfile?.profilePhoto,
+  };
 };
 
 export const AuthService = {

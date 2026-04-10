@@ -21,9 +21,7 @@ model User {
   email    String  @unique
   password String?
 
-  avatar          String?
   phone           String? @unique
-  name            String?
   role            Role    @default(CUSTOMER)
   language        String? @default("en")
   isEmailVerified Boolean @default(false)
@@ -35,20 +33,33 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
-  // Location fields
-  city      String?
-  address   String?
-  latitude  Float?
-  longitude Float?
-
-  otpTokens      OtpToken[]
-  refreshTokens  RefreshToken[]
-  cleanerProfile CleanerProfile?
+  otpTokens       OtpToken[]
+  refreshTokens   RefreshToken[]
+  customerProfile CustomerProfile?
+  cleanerProfile  CleanerProfile?
 
   customerBookings Booking[] @relation("CustomerBookings")
   cleanerBookings  Booking[] @relation("CleanerBookings")
 
   customerReviews Review[] @relation("CustomerReviews")
+}
+
+model CustomerProfile {
+  id     String @id @default(auto()) @map("_id") @db.ObjectId
+  userId String @unique @db.ObjectId
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name         String?
+  profilePhoto String?
+
+  // Location
+  address   String?
+  city      String?
+  latitude  Float?
+  longitude Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model CleanerProfile {
@@ -104,9 +115,9 @@ model CleanerService {
 }
 
 model Review {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  bookingId String   @unique @db.ObjectId
-  booking   Booking  @relation(fields: [bookingId], references: [id])
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  bookingId String  @unique @db.ObjectId
+  booking   Booking @relation(fields: [bookingId], references: [id])
 
   customerId String @db.ObjectId
   customer   User   @relation("CustomerReviews", fields: [customerId], references: [id])
@@ -128,10 +139,10 @@ enum OtpPurpose {
 }
 
 model PropertyCategory {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  name      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  name      String    @unique
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
   bookings  Booking[]
 }
 
@@ -160,7 +171,6 @@ model ServiceArea {
   updatedAt DateTime @updatedAt
 }
 
-
 enum BookingStatus {
   PENDING
   CONFIRMED
@@ -183,8 +193,8 @@ model Booking {
   propertyCategoryId String           @db.ObjectId
   propertyCategory   PropertyCategory @relation(fields: [propertyCategoryId], references: [id])
 
-  serviceCategoryId  String          @db.ObjectId
-  serviceCategory    ServiceCategory @relation(fields: [serviceCategoryId], references: [id])
+  serviceCategoryId String          @db.ObjectId
+  serviceCategory   ServiceCategory @relation(fields: [serviceCategoryId], references: [id])
 
   rooms     Int  @default(1)
   spaceSqft Int?
@@ -254,4 +264,3 @@ model RefreshToken {
 
   @@index([userId])
 }
-

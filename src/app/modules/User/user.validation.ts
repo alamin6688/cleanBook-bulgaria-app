@@ -19,7 +19,7 @@ const updateBasicProfileZodSchema = z.object({
   body: z.object({
     displayName: z.string().min(1),
     bio: z.string().min(1),
-    profilePhoto: z.string().optional(),
+    profilePhoto: z.string().optional().nullable(),
   }),
 });
 
@@ -56,8 +56,9 @@ const saveProfileZodSchema = z.object({
   body: z.object({
     displayName: z.string().optional(),
     bio: z.string().optional(),
-    profilePhoto: z.string().optional(),
+    profilePhoto: z.string().optional().nullable(),
     language: z.string().optional(),
+    yearsExperience: z.number().optional().nullable(),
     address: z.string().optional(),
     city: z.string().optional(),
     latitude: z.number().optional(),

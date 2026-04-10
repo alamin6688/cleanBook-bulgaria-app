@@ -381,6 +381,6 @@ export const setupSwagger = (app: Application): void => {
       res.send(swaggerSpec);
     });
 
-    console.warn(`📄 Swagger docs available at /api/docs`);
+    // console.warn(`📄 Swagger docs available at /api/docs`);
   }
 };

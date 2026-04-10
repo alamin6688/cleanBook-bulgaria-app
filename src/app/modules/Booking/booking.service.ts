@@ -15,6 +15,26 @@ import {
   differenceInMinutes,
 } from "date-fns";
 
+const flattenUser = (user: any) => {
+  if (!user) return null;
+  const name =
+    user.role === "CLEANER"
+      ? user.cleanerProfile?.displayName
+      : user.customerProfile?.name || user.email.split("@")[0];
+  const avatar =
+    user.role === "CLEANER"
+      ? user.cleanerProfile?.profilePhoto
+      : user.customerProfile?.profilePhoto;
+  
+  // Flatten location
+  const city = user.role === "CLEANER" ? user.cleanerProfile?.city : user.customerProfile?.city;
+  const address = user.role === "CLEANER" ? user.cleanerProfile?.address : user.customerProfile?.address;
+  const latitude = user.role === "CLEANER" ? user.cleanerProfile?.latitude : user.customerProfile?.latitude;
+  const longitude = user.role === "CLEANER" ? user.cleanerProfile?.longitude : user.customerProfile?.longitude;
+
+  return { ...user, name, avatar, city, address, latitude, longitude };
+};
+
 const parseTime = (timeStr: string, refDate: Date) => {
   return timeStr.toLowerCase().includes("m")
     ? parse(timeStr, "hh:mm a", refDate)
@@ -335,34 +355,34 @@ const createBooking = async (userId: string, data: ICreateBooking) => {
     },
     include: {
       cleaner: {
-        select: {
-          name: true,
-          avatar: true,
-          email: true,
-          phone: true,
-          cleanerProfile: {
-            select: {
-              displayName: true,
-              profilePhoto: true,
-              avgRating: true,
-              bio: true,
-            },
-          },
-        },
+        include: { cleanerProfile: true },
       },
       customer: {
-        select: {
-          name: true,
-          email: true,
-          phone: true,
-        },
+        include: { customerProfile: true },
       },
       propertyCategory: true,
       serviceCategory: true,
     },
   });
 
-  return booking;
+  const flattenUser = (user: any) => {
+    if (!user) return null;
+    const name =
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.displayName
+        : user.customerProfile?.name || user.email.split("@")[0];
+    const avatar =
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.profilePhoto
+        : user.customerProfile?.profilePhoto;
+    return { ...user, name, avatar };
+  };
+
+  return {
+    ...booking,
+    cleaner: flattenUser(booking.cleaner),
+    customer: flattenUser(booking.customer),
+  };
 };
 
 const getMyBookings = async (userId: string, role: string, tab?: string) => {
@@ -374,7 +394,9 @@ const getMyBookings = async (userId: string, role: string, tab?: string) => {
   }
 
   if (tab === "ACTIVE") {
-    where.status = { in: [BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS, BookingStatus.RESCHEDULE_REQUESTED] };
+    where.status = {
+      in: [BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS, BookingStatus.RESCHEDULE_REQUESTED],
+    };
   } else if (tab === "REQUEST") {
     where.status = BookingStatus.PENDING;
   } else if (tab === "PAST") {
@@ -385,16 +407,10 @@ const getMyBookings = async (userId: string, role: string, tab?: string) => {
     where,
     include: {
       cleaner: {
-        select: {
-          name: true,
-          avatar: true,
-          cleanerProfile: {
-            select: { displayName: true, profilePhoto: true },
-          },
-        },
+        include: { cleanerProfile: true },
       },
       customer: {
-        select: { name: true, email: true },
+        include: { customerProfile: true },
       },
       propertyCategory: true,
       serviceCategory: true,
@@ -402,19 +418,40 @@ const getMyBookings = async (userId: string, role: string, tab?: string) => {
     orderBy: { createdAt: "desc" },
   });
 
+  const flattenUser = (user: any) => {
+    if (!user) return null;
+    const name =
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.displayName
+        : user.customerProfile?.name || user.email.split("@")[0];
+    const avatar =
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.profilePhoto
+        : user.customerProfile?.profilePhoto;
+    return { ...user, name, avatar };
+  };
+
+  const flattenedBookings = bookings.map((b) => ({
+    ...b,
+    cleaner: flattenUser(b.cleaner),
+    customer: flattenUser(b.customer),
+  }));
+
   // Auto-transition to IN_PROGRESS if time has started
   const now = new Date();
-  const updatedBookings = await Promise.all(bookings.map(async (booking) => {
-    const bookingDate = new Date(booking.date);
-    // Rough check: if it's today and the start time has passed, but it is still 'CONFIRMED'
-    // Note: Parsing "09:00 AM" would be more precise, but for now we'll check the day
-    if (booking.status === BookingStatus.CONFIRMED && bookingDate <= now) {
-      // In a real app, you'd compare the actual hours here too
-      // For now, let's keep it simple: if it's today or earlier and confirmed, it's effectively In Progress
-      // return await prisma.booking.update({ where: { id: booking.id }, data: { status: BookingStatus.IN_PROGRESS }, ...include })
-    }
-    return booking;
-  }));
+  const updatedBookings = await Promise.all(
+    flattenedBookings.map(async (booking) => {
+      const bookingDate = new Date(booking.date);
+      // Rough check: if it's today and the start time has passed, but it is still 'CONFIRMED'
+      // Note: Parsing "09:00 AM" would be more precise, but for now we'll check the day
+      if (booking.status === BookingStatus.CONFIRMED && bookingDate <= now) {
+        // In a real app, you'd compare the actual hours here too
+        // For now, let's keep it simple: if it's today or earlier and confirmed, it's effectively In Progress
+        // return await prisma.booking.update({ where: { id: booking.id }, data: { status: BookingStatus.IN_PROGRESS }, ...include })
+      }
+      return booking;
+    })
+  );
 
   return bookings;
 };
@@ -424,21 +461,28 @@ const getBookingById = async (id: string, userId: string, role: string) => {
     where: { id },
     include: {
       cleaner: {
-        select: {
-          name: true,
-          avatar: true,
-          cleanerProfile: {
-            select: { displayName: true, profilePhoto: true, avgRating: true },
-          },
-        },
+        include: { cleanerProfile: true },
       },
       customer: {
-        select: { name: true, email: true },
+        include: { customerProfile: true },
       },
       propertyCategory: true,
       serviceCategory: true,
     },
   });
+
+  const flattenUser = (user: any) => {
+    if (!user) return null;
+    const name =
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.displayName
+        : user.customerProfile?.name || user.email.split("@")[0];
+    const avatar =
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.profilePhoto
+        : user.customerProfile?.profilePhoto;
+    return { ...user, name, avatar };
+  };
 
   if (!booking) {
     throw new ApiError(httpStatus.NOT_FOUND, "Booking not found");
@@ -452,54 +496,25 @@ const getBookingById = async (id: string, userId: string, role: string) => {
     throw new ApiError(httpStatus.FORBIDDEN, "Access denied");
   }
 
-  return booking;
-};
+  return {
+    ...booking,
+    cleaner: flattenUser(booking.cleaner),
+    customer: flattenUser(booking.customer),
+  };
+}
 
 const getBookingForPayment = async (bookingId: string, userId: string) => {
   const booking = await prisma.booking.findUnique({
     where: { id: bookingId },
     include: {
       cleaner: {
-        select: {
-          id: true,
-          name: true,
-          avatar: true,
-          email: true,
-          phone: true,
-          cleanerProfile: {
-            select: {
-              displayName: true,
-              profilePhoto: true,
-              avgRating: true,
-              bio: true,
-              address: true,
-              city: true,
-            },
-          },
-        },
+        include: { cleanerProfile: true },
       },
       customer: {
-        select: {
-          id: true,
-          name: true,
-          email: true,
-          phone: true,
-          address: true,
-          city: true,
-        },
+        include: { customerProfile: true },
       },
-      propertyCategory: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
-      serviceCategory: {
-        select: {
-          id: true,
-          name: true,
-        },
-      },
+      propertyCategory: true,
+      serviceCategory: true,
     },
   });
 
@@ -514,6 +529,8 @@ const getBookingForPayment = async (bookingId: string, userId: string) => {
 
   return {
     ...booking,
+    cleaner: flattenUser(booking.cleaner),
+    customer: flattenUser(booking.customer),
     formattedDate: format(new Date(booking.date), "EEEE, MMMM d, yyyy"),
     duration: `${booking.startTime} - ${booking.endTime}`,
   };
@@ -543,32 +560,21 @@ const confirmBooking = async (bookingId: string, userId: string) => {
     },
     include: {
       cleaner: {
-        select: {
-          name: true,
-          avatar: true,
-          email: true,
-          phone: true,
-          cleanerProfile: {
-            select: {
-              displayName: true,
-              profilePhoto: true,
-              avgRating: true,
-            },
-          },
-        },
+        include: { cleanerProfile: true },
       },
       customer: {
-        select: {
-          name: true,
-          email: true,
-        },
+        include: { customerProfile: true },
       },
       propertyCategory: true,
       serviceCategory: true,
     },
   });
 
-  return updatedBooking;
+  return {
+    ...updatedBooking,
+    cleaner: flattenUser(updatedBooking.cleaner),
+    customer: flattenUser(updatedBooking.customer),
+  };
 };
 
 const updatePaymentStatus = async (bookingId: string, paymentStatus: string) => {
@@ -579,30 +585,21 @@ const updatePaymentStatus = async (bookingId: string, paymentStatus: string) => 
     },
     include: {
       cleaner: {
-        select: {
-          name: true,
-          avatar: true,
-          email: true,
-          cleanerProfile: {
-            select: {
-              displayName: true,
-              profilePhoto: true,
-            },
-          },
-        },
+        include: { cleanerProfile: true },
       },
       customer: {
-        select: {
-          name: true,
-          email: true,
-        },
+        include: { customerProfile: true },
       },
       propertyCategory: true,
       serviceCategory: true,
     },
   });
 
-  return booking;
+  return {
+    ...booking,
+    cleaner: flattenUser(booking.cleaner),
+    customer: flattenUser(booking.customer),
+  };
 };
 
 const getCleanerAvailability = async (cleanerId: string) => {
@@ -784,11 +781,13 @@ const getAvailableCleaners = async (query: any) => {
   };
 
   if (searchTerm) {
-    where.OR = [
-      { name: { contains: searchTerm, mode: "insensitive" } },
-      { cleanerProfile: { displayName: { contains: searchTerm, mode: "insensitive" } } },
-      { cleanerProfile: { bio: { contains: searchTerm, mode: "insensitive" } } },
-    ];
+    where.cleanerProfile = {
+      ...where.cleanerProfile,
+      OR: [
+        { displayName: { contains: searchTerm, mode: "insensitive" } },
+        { bio: { contains: searchTerm, mode: "insensitive" } },
+      ],
+    };
   }
 
   if (propertyCategoryId) {
@@ -796,7 +795,7 @@ const getAvailableCleaners = async (query: any) => {
   }
 
   if (city) {
-    where.city = city;
+    where.cleanerProfile = { ...where.cleanerProfile, city };
   }
 
   // 2. Fetch Potential Cleaners
@@ -804,35 +803,13 @@ const getAvailableCleaners = async (query: any) => {
     where,
     select: {
       id: true,
-      name: true,
-      avatar: true,
       email: true,
       phone: true,
-      city: true,
-      latitude: true,
-      longitude: true,
+      role: true,
+      customerProfile: true, // Though role is CLEANER, good to be consistent
       cleanerProfile: {
-        select: {
-          displayName: true,
-          bio: true,
-          profilePhoto: true,
-          avgRating: true,
-          totalReviews: true,
-          yearsExperience: true,
-          workingDays: true,
-          workFrom: true,
-          workTo: true,
-          blockOffDates: true,
-          services: {
-            where: serviceIds.length > 0 ? { serviceCategoryId: { in: serviceIds } } : undefined,
-            select: {
-              serviceCategoryId: true,
-              name: true,
-              pricePerHour: true,
-            },
-          },
-        },
-      },
+        include: { services: { where: serviceIds.length > 0 ? { serviceCategoryId: { in: serviceIds } } : undefined } }
+      }
     },
   });
 
@@ -875,12 +852,12 @@ const getAvailableCleaners = async (query: any) => {
 
     // C. Distance Check
     let distance = Infinity;
-    if (latitude && longitude && cleaner.latitude && cleaner.longitude) {
+    if (latitude && longitude && profile.latitude && profile.longitude) {
       distance = getDistanceKm(
         Number(latitude),
         Number(longitude),
-        cleaner.latitude,
-        cleaner.longitude
+        profile.latitude,
+        profile.longitude
       );
       if (distance > radius) continue;
     }
@@ -905,10 +882,16 @@ const getAvailableCleaners = async (query: any) => {
     });
   }
 
-  return results;
+  return results.map(cleaner => flattenUser(cleaner));
 };
 
-const updateBookingStatus = async (bookingId: string, userId: string, role: string, status: BookingStatus, data?: any) => {
+const updateBookingStatus = async (
+  bookingId: string,
+  userId: string,
+  role: string,
+  status: BookingStatus,
+  data?: any
+) => {
   const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
   if (!booking) throw new ApiError(httpStatus.NOT_FOUND, "Booking not found");
 
@@ -924,25 +907,38 @@ const updateBookingStatus = async (bookingId: string, userId: string, role: stri
 
   // Restriction: Only Cleaners can set IN_PROGRESS (if they want to do it manually)
   if (status === BookingStatus.IN_PROGRESS && role === "CUSTOMER") {
-    throw new ApiError(httpStatus.FORBIDDEN, "Customers cannot manually start the cleaning process");
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      "Customers cannot manually start the cleaning process"
+    );
   }
 
-  return await prisma.booking.update({
+  const updatedBooking = await prisma.booking.update({
     where: { id: bookingId },
-    data: { 
+    data: {
       status,
       cancelReason: status === BookingStatus.CANCELLED ? (data as any).reason : undefined,
       cancelNote: status === BookingStatus.CANCELLED ? (data as any).note : undefined,
     },
     include: {
-      cleaner: { select: { name: true, avatar: true } },
-      customer: { select: { name: true, phone: true } },
-      serviceCategory: true
-    }
+      cleaner: { include: { cleanerProfile: true } },
+      customer: { include: { customerProfile: true } },
+      serviceCategory: true,
+    },
   });
+
+  return {
+    ...updatedBooking,
+    cleaner: flattenUser(updatedBooking.cleaner),
+    customer: flattenUser(updatedBooking.customer),
+  };
 };
 
-const requestReschedule = async (bookingId: string, userId: string, data: { date: string, startTime: string, endTime: string, reason?: string, note?: string }) => {
+const requestReschedule = async (
+  bookingId: string,
+  userId: string,
+  data: { date: string; startTime: string; endTime: string; reason?: string; note?: string }
+) => {
   const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
   if (!booking) throw new ApiError(httpStatus.NOT_FOUND, "Booking not found");
 
@@ -953,7 +949,10 @@ const requestReschedule = async (bookingId: string, userId: string, data: { date
 
   // Can only reschedule if the job hasn't started or been cancelled
   if (booking.status !== BookingStatus.CONFIRMED && booking.status !== BookingStatus.PENDING) {
-    throw new ApiError(httpStatus.BAD_REQUEST, `Cannot reschedule a booking with status ${booking.status}`);
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      `Cannot reschedule a booking with status ${booking.status}`
+    );
   }
 
   const newDate = new Date(data.date);
@@ -969,8 +968,8 @@ const requestReschedule = async (bookingId: string, userId: string, data: { date
       rescheduleStartTime: data.startTime,
       rescheduleEndTime: data.endTime,
       rescheduleReason: data.reason,
-      rescheduleNote: data.note
-    }
+      rescheduleNote: data.note,
+    },
   });
 };
 
@@ -980,11 +979,17 @@ const acceptReschedule = async (bookingId: string, userId: string) => {
 
   // Only the cleaner assigned to the booking can accept the reschedule
   if (booking.cleanerId !== userId) {
-    throw new ApiError(httpStatus.FORBIDDEN, "Only the assigned cleaner can accept a reschedule request");
+    throw new ApiError(
+      httpStatus.FORBIDDEN,
+      "Only the assigned cleaner can accept a reschedule request"
+    );
   }
 
   if (booking.status !== BookingStatus.RESCHEDULE_REQUESTED) {
-    throw new ApiError(httpStatus.BAD_REQUEST, "No pending reschedule request found for this booking");
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      "No pending reschedule request found for this booking"
+    );
   }
 
   return await prisma.booking.update({
@@ -998,8 +1003,8 @@ const acceptReschedule = async (bookingId: string, userId: string) => {
       rescheduleStartTime: null,
       rescheduleEndTime: null,
       rescheduleReason: null,
-      rescheduleNote: null
-    }
+      rescheduleNote: null,
+    },
   });
 };
 
@@ -1040,17 +1045,17 @@ const requestCompletion = async (
       completionNote: completionNote || null,
     },
     include: {
-      cleaner: {
-        select: { name: true, avatar: true },
-      },
-      customer: {
-        select: { name: true, email: true },
-      },
+      cleaner: { include: { cleanerProfile: true } },
+      customer: { include: { customerProfile: true } },
       serviceCategory: true,
     },
   });
 
-  return updatedBooking;
+  return {
+    ...updatedBooking,
+    cleaner: flattenUser(updatedBooking.cleaner),
+    customer: flattenUser(updatedBooking.customer),
+  };
 };
 
 const confirmCompletion = async (bookingId: string, userId: string) => {
@@ -1068,7 +1073,10 @@ const confirmCompletion = async (bookingId: string, userId: string) => {
   }
 
   if (booking.status !== BookingStatus.COMPLETION_REQUESTED) {
-    throw new ApiError(httpStatus.BAD_REQUEST, "Completion hasn't been requested for this booking yet");
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      "Completion hasn't been requested for this booking yet"
+    );
   }
 
   const updatedBooking = await prisma.booking.update({
@@ -1077,9 +1085,8 @@ const confirmCompletion = async (bookingId: string, userId: string) => {
       status: BookingStatus.COMPLETE,
     },
     include: {
-      cleaner: {
-        select: { name: true, avatar: true, id: true },
-      },
+      cleaner: { include: { cleanerProfile: true } },
+      customer: { include: { customerProfile: true } },
       serviceCategory: true,
     },
   });
@@ -1092,7 +1099,11 @@ const confirmCompletion = async (bookingId: string, userId: string) => {
     },
   });
 
-  return updatedBooking;
+  return {
+    ...updatedBooking,
+    cleaner: flattenUser(updatedBooking.cleaner),
+    customer: flattenUser(updatedBooking.customer),
+  };
 };
 
 const cancelCompletion = async (bookingId: string, userId: string) => {
@@ -1119,14 +1130,17 @@ const cancelCompletion = async (bookingId: string, userId: string) => {
       status: BookingStatus.IN_PROGRESS,
     },
     include: {
-      cleaner: {
-        select: { name: true, avatar: true },
-      },
+      cleaner: { include: { cleanerProfile: true } },
+      customer: { include: { customerProfile: true } },
       serviceCategory: true,
     },
   });
 
-  return updatedBooking;
+  return {
+    ...updatedBooking,
+    cleaner: flattenUser(updatedBooking.cleaner),
+    customer: flattenUser(updatedBooking.customer),
+  };
 };
 
 export const BookingService = {

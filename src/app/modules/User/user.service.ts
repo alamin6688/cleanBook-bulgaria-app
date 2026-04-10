@@ -19,7 +19,7 @@ const updateLanguage = async (userId: string, data: IUpdateLanguageInput) => {
 const updateLocation = async (userId: string, data: IUpdateLocationInput) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { cleanerProfile: true },
+    include: { cleanerProfile: true, customerProfile: true },
   });
 
   if (!user) {
@@ -27,18 +27,7 @@ const updateLocation = async (userId: string, data: IUpdateLocationInput) => {
   }
 
   return await prisma.$transaction(async (tx) => {
-    // 1. Update User location
-    const updatedUser = await tx.user.update({
-      where: { id: userId },
-      data: {
-        address: data.address,
-        city: data.city,
-        latitude: data.latitude,
-        longitude: data.longitude,
-      },
-    });
-
-    // 2. If user is a cleaner, also update CleanerProfile location
+    // 1. Update Profile location
     if (user.role === "CLEANER" && user.cleanerProfile) {
       await tx.cleanerProfile.update({
         where: { id: user.cleanerProfile.id },
@@ -49,16 +38,26 @@ const updateLocation = async (userId: string, data: IUpdateLocationInput) => {
           longitude: data.longitude,
         },
       });
+    } else if (user.role === "CUSTOMER" && user.customerProfile) {
+      await tx.customerProfile.update({
+        where: { id: user.customerProfile.id },
+        data: {
+          address: data.address,
+          city: data.city,
+          latitude: data.latitude,
+          longitude: data.longitude,
+        },
+      });
     }
 
-    return updatedUser;
+    return await getUserById(userId);
   });
 };
 
 const updateBasicProfile = async (userId: string, data: IUpdateBasicProfileInput) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { cleanerProfile: true },
+    include: { cleanerProfile: true, customerProfile: true },
   });
 
   if (!user) {
@@ -66,7 +65,7 @@ const updateBasicProfile = async (userId: string, data: IUpdateBasicProfileInput
   }
 
   if (user.role === "CLEANER") {
-    return await prisma.cleanerProfile.update({
+    await prisma.cleanerProfile.update({
       where: { userId },
       data: {
         displayName: data.displayName,
@@ -74,9 +73,17 @@ const updateBasicProfile = async (userId: string, data: IUpdateBasicProfileInput
         profilePhoto: data.profilePhoto,
       },
     });
+  } else if (user.role === "CUSTOMER") {
+    await prisma.customerProfile.update({
+      where: { userId },
+      data: {
+        name: data.displayName,
+        profilePhoto: data.profilePhoto,
+      },
+    });
   }
 
-  return user;
+  return await getUserById(userId);
 };
 
 const updateCleanerDetails = async (userId: string, data: IUpdateCleanerProfileInput) => {
@@ -171,8 +178,8 @@ const updateCleanerDetails = async (userId: string, data: IUpdateCleanerProfileI
         additionalServiceIds: data.additionalServiceIds,
         workFrom: data.workFrom,
         workTo: data.workTo,
-
         blockOffDates: data.blockOffDates,
+        yearsExperience: data.yearsExperience,
       },
     });
 
@@ -231,8 +238,6 @@ const getNearbyCleaners = async (userLat: number, userLng: number, radiusKm: num
         select: {
           id: true,
           email: true,
-          name: true,
-          avatar: true,
         },
       },
     },
@@ -242,7 +247,12 @@ const getNearbyCleaners = async (userLat: number, userLng: number, radiusKm: num
   const nearby = allCleaners
     .map((cleaner) => {
       const dist = getDistanceKm(userLat, userLng, cleaner.latitude!, cleaner.longitude!);
-      return { ...cleaner, distance: dist };
+      return {
+        ...cleaner,
+        name: cleaner.displayName,
+        avatar: cleaner.profilePhoto, // Add for compatibility
+        distance: dist,
+      };
     })
     .filter((cleaner) => cleaner.distance <= radiusKm)
     .sort((a, b) => a.distance - b.distance); // Nearest first
@@ -278,6 +288,18 @@ const enrichCleanerProfile = async (cleanerProfile: any) => {
     };
   });
 
+  // 3. Map reviews to flatten customer profile
+  const enrichedReviews = (cleanerProfile.reviews ?? []).map((r: any) => {
+    const { customer, ...reviewRest } = r;
+    return {
+      ...reviewRest,
+      customer: {
+        name: customer?.customerProfile?.name || "Customer",
+        avatar: customer?.customerProfile?.profilePhoto || null,
+      },
+    };
+  });
+
   // Strip internal DB fields, raw ID arrays, and duplicate location fields
   const {
     propertyTypeIds,
@@ -288,6 +310,7 @@ const enrichCleanerProfile = async (cleanerProfile: any) => {
     city,
     latitude,
     longitude,
+    reviews,
     ...rest
   } = cleanerProfile;
 
@@ -295,7 +318,15 @@ const enrichCleanerProfile = async (cleanerProfile: any) => {
     ...rest,
     propertyTypes,
     services: enrichedServices,
+    reviews: enrichedReviews,
   };
+};
+
+const enrichCustomerProfile = async (customerProfile: any) => {
+  if (!customerProfile) return null;
+
+  const { id, userId, ...rest } = customerProfile;
+  return rest;
 };
 
 const getUserById = async (id: string) => {
@@ -304,31 +335,25 @@ const getUserById = async (id: string) => {
     select: {
       id: true,
       email: true,
-      name: true,
-      avatar: true,
       phone: true,
       role: true,
-      city: true,
-      address: true,
-      latitude: true,
-      longitude: true,
       isActive: true,
       language: true,
       lastLogin: true,
       onboardingCompleted: true,
+      customerProfile: true,
       cleanerProfile: {
         select: {
-          // Internal IDs — used only inside enrichCleanerProfile, stripped from output
+          // Internal IDs
           id: true,
           userId: true,
           propertyTypeIds: true,
           additionalServiceIds: true,
-          // Duplicate location — already on user root, stripped from output
           address: true,
           city: true,
           latitude: true,
           longitude: true,
-          // Dynamic / meaningful cleaner fields
+          // meaningful cleaner fields
           displayName: true,
           bio: true,
           profilePhoto: true,
@@ -341,7 +366,6 @@ const getUserById = async (id: string) => {
           avgRating: true,
           totalReviews: true,
           totalJobs: true,
-
           services: {
             select: {
               id: true,
@@ -359,16 +383,16 @@ const getUserById = async (id: string) => {
               createdAt: true,
               customer: {
                 select: {
-                  name: true,
-                  avatar: true,
-                  email: true,
-                  
+                  customerProfile: {
+                    select: {
+                      name: true,
+                      profilePhoto: true,
+                    },
+                  },
                 },
               },
             },
-            orderBy: {
-              createdAt: "desc",
-            },
+            orderBy: { createdAt: "desc" },
           },
         },
       },
@@ -379,38 +403,71 @@ const getUserById = async (id: string) => {
     throw new ApiError(httpStatus.NOT_FOUND, "User not found");
   }
 
-  return {
+  // Flatten logic to preserve Postman response structure
+  const profile =
+    user.role === "CLEANER"
+      ? await enrichCleanerProfile(user.cleanerProfile)
+      : await enrichCustomerProfile(user.customerProfile);
+
+  const flatData: any = {
     ...user,
-    cleanerProfile: await enrichCleanerProfile(user.cleanerProfile),
+    name:
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.displayName
+        : user.customerProfile?.name || user.email.split("@")[0],
+    avatar:
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.profilePhoto
+        : user.customerProfile?.profilePhoto,
+    address:
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.address
+        : user.customerProfile?.address,
+    city:
+      user.role === "CLEANER" ? user.cleanerProfile?.city : user.customerProfile?.city,
+    latitude:
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.latitude
+        : user.customerProfile?.latitude,
+    longitude:
+      user.role === "CLEANER"
+        ? user.cleanerProfile?.longitude
+        : user.customerProfile?.longitude,
+  };
+
+  // Remove profiles from root and add the enriched one
+  delete flatData.customerProfile;
+  delete flatData.cleanerProfile;
+
+  return {
+    ...flatData,
+    cleanerProfile: user.role === "CLEANER" ? profile : undefined,
   };
 };
 
 const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    include: { cleanerProfile: true },
+    include: { cleanerProfile: true, customerProfile: true },
   });
 
   if (!user) {
     throw new ApiError(httpStatus.NOT_FOUND, "User not found");
   }
 
-  return await prisma.$transaction(async (tx) => {
-    // 1. Update User basic and location fields if provided
+  await prisma.$transaction(async (tx) => {
+    // 1. Update User account fields
     await tx.user.update({
       where: { id: userId },
       data: {
-        city: data.city,
-        address: data.address,
-        latitude: data.latitude,
-        longitude: data.longitude,
         language: data.language,
         onboardingCompleted: true,
       },
     });
 
-    // Validation & ID Resolution for Cleaner Profile fields
+    // 2. Handle Profile Updates
     if (user.role === "CLEANER") {
+      // Validation & ID Resolution for Cleaner Profile fields
       const normalize = (s: string) =>
         s
           .toLowerCase()
@@ -419,70 +476,38 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
 
       const propertyInputs = (data as any).propertyTypes || (data as any).propertyTypeIds || [];
       if (propertyInputs.length > 0) {
-        const isObjectId = /^[0-9a-fA-F]{24}$/;
-        const objectIds = propertyInputs.filter((id: string) => isObjectId.test(id));
-
-        const existing = await tx.propertyCategory.findMany({
-          select: { id: true, name: true },
-        });
-
+        const existing = await tx.propertyCategory.findMany({ select: { id: true, name: true } });
         data.propertyTypeIds = propertyInputs.map((input: string) => {
           const found = existing.find(
             (e) => e.id === input || normalize(e.name) === normalize(input)
           );
-          if (!found) {
-            throw new ApiError(httpStatus.BAD_REQUEST, `Property Category not found: ${input}`);
-          }
+          if (!found) throw new ApiError(httpStatus.BAD_REQUEST, `Property Category not found: ${input}`);
           return found.id;
         });
       }
 
-      const additionalServiceInputs =
-        (data as any).additionalServices || (data as any).additionalServiceIds || [];
+      const additionalServiceInputs = (data as any).additionalServices || (data as any).additionalServiceIds || [];
       if (additionalServiceInputs.length > 0) {
-        const isObjectId = /^[0-9a-fA-F]{24}$/;
-        const objectIds = additionalServiceInputs.filter((id: string) => isObjectId.test(id));
-
-        const existing = await tx.additionalServiceCategory.findMany({
-          select: { id: true, name: true },
-        });
-
+        const existing = await tx.additionalServiceCategory.findMany({ select: { id: true, name: true } });
         data.additionalServiceIds = additionalServiceInputs.map((input: string) => {
           const found = existing.find(
             (e) => e.id === input || normalize(e.name) === normalize(input)
           );
-          if (!found) {
-            throw new ApiError(httpStatus.BAD_REQUEST, `Additional Service not found: ${input}`);
-          }
+          if (!found) throw new ApiError(httpStatus.BAD_REQUEST, `Additional Service not found: ${input}`);
           return found.id;
         });
       }
 
       if (data.services && data.services.length > 0) {
-        const isObjectId = /^[0-9a-fA-F]{24}$/;
-        const inputRefs = data.services.map((s: any) => s.serviceCategoryId || s.name);
-
-        const existing = await tx.serviceCategory.findMany({
-          select: { id: true, name: true },
-        });
-
+        const existing = await tx.serviceCategory.findMany({ select: { id: true, name: true } });
         data.services = data.services.map((s: any) => {
           const ref = s.serviceCategoryId || s.name;
           const found = existing.find((e) => e.id === ref || normalize(e.name) === normalize(ref));
-          if (!found) {
-            throw new ApiError(httpStatus.BAD_REQUEST, `Service Category not found: ${ref}`);
-          }
-          return {
-            ...s,
-            serviceCategoryId: found.id,
-            name: found.name, // Use the official admin-defined name
-          };
+          if (!found) throw new ApiError(httpStatus.BAD_REQUEST, `Service Category not found: ${ref}`);
+          return { ...s, serviceCategoryId: found.id, name: found.name, pricePerHour: s.pricePerHour };
         });
       }
-    }
 
-    // 2. If user is a cleaner, handle CleanerProfile upsert and services sync
-    if (user.role === "CLEANER") {
       const cleanerProfile = await tx.cleanerProfile.upsert({
         where: { userId },
         create: {
@@ -500,8 +525,8 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
           additionalServiceIds: data.additionalServiceIds,
           workFrom: data.workFrom,
           workTo: data.workTo,
-
           blockOffDates: data.blockOffDates,
+          yearsExperience: data.yearsExperience,
         },
         update: {
           displayName: data.displayName !== undefined ? data.displayName : undefined,
@@ -517,17 +542,13 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
           additionalServiceIds: data.additionalServiceIds !== undefined ? data.additionalServiceIds : undefined,
           workFrom: data.workFrom !== undefined ? data.workFrom : undefined,
           workTo: data.workTo !== undefined ? data.workTo : undefined,
-
           blockOffDates: data.blockOffDates !== undefined ? data.blockOffDates : undefined,
+          yearsExperience: data.yearsExperience !== undefined ? data.yearsExperience : undefined,
         },
       });
 
-      // 3. Update services if provided
       if (data.services) {
-        await tx.cleanerService.deleteMany({
-          where: { cleanerProfileId: cleanerProfile.id },
-        });
-
+        await tx.cleanerService.deleteMany({ where: { cleanerProfileId: cleanerProfile.id } });
         await tx.cleanerService.createMany({
           data: data.services.map((s: any) => ({
             cleanerProfileId: cleanerProfile.id,
@@ -537,37 +558,31 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
           })),
         });
       }
-    }
-
-    // Explicitly refetch the latest data with all relations
-    const finalUser = await tx.user.findUnique({
-      where: { id: userId },
-      include: {
-        cleanerProfile: {
-          include: {
-            services: true,
-            reviews: {
-              include: {
-                customer: {
-                  select: { name: true, avatar: true },
-                },
-              },
-              orderBy: { createdAt: "desc" },
-            },
-          },
+    } else if (user.role === "CUSTOMER") {
+      await tx.customerProfile.upsert({
+        where: { userId },
+        create: {
+          userId,
+          name: data.displayName,
+          profilePhoto: data.profilePhoto,
+          address: data.address,
+          city: data.city,
+          latitude: data.latitude,
+          longitude: data.longitude,
         },
-      },
-    });
-
-    if (!finalUser) {
-      throw new ApiError(httpStatus.NOT_FOUND, "User not found after update");
+        update: {
+          name: data.displayName !== undefined ? data.displayName : undefined,
+          profilePhoto: data.profilePhoto !== undefined ? data.profilePhoto : undefined,
+          address: data.address !== undefined ? data.address : undefined,
+          city: data.city !== undefined ? data.city : undefined,
+          latitude: data.latitude !== undefined ? data.latitude : undefined,
+          longitude: data.longitude !== undefined ? data.longitude : undefined,
+        },
+      });
     }
-
-    return {
-      ...finalUser,
-      cleanerProfile: await enrichCleanerProfile(finalUser.cleanerProfile),
-    };
   });
+
+  return await getUserById(userId);
 };
 
 export const UserService = {

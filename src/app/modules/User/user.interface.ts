@@ -27,8 +27,8 @@ export type IUpdateCleanerProfileInput = {
   }[];
   workFrom?: string;
   workTo?: string;
-
   blockOffDates?: Date[];
+  yearsExperience?: number;
 };
 
 export type IUpdateProfileInput = {
@@ -56,6 +56,6 @@ export type IUpdateProfileInput = {
   }[];
   workFrom?: string;
   workTo?: string;
-
   blockOffDates?: Date[];
+  yearsExperience?: number;
 };
