@@ -66,7 +66,7 @@ const updateAvailability = async (userId: string, data: IUpdateAvailabilityInput
     // Smart Resolver: Resolve new postcodes to area names automatically (Global)
     if (data.postcodes && data.postcodes.length > 0) {
       const resolutionPromises = data.postcodes.map((pc) =>
-        resolvePostcodeToArea(pc, user.city, data.country)
+        resolvePostcodeToArea(pc, user.cleanerProfile!.city, data.country)
       );
       const resolvedNames = await Promise.all(resolutionPromises);
       

@@ -10,6 +10,7 @@ import { passwordResetEmail } from "../../../shared/emails/passwordResetEmail";
 import { generateOTP } from "../../../utils/generateOtp";
 import { compareItem, hashItem } from "../../../utils/hashAndCompareItem";
 import { ITokenPayload, jwtHelpers } from "../../../utils/jwtHelpers";
+import { createStripeAccount, createStripeCustomer } from "../../../utils/Stripe/stripe";
 import {
   IChangePasswordInput,
   IForgotPasswordInput,
@@ -93,12 +94,42 @@ const register = async (userData: IUser) => {
       });
 
       if (userData.role === "CLEANER") {
+        // Silently create Stripe Express Connect account
+        let stripeAccountId: string | undefined;
+        try {
+          stripeAccountId = await createStripeAccount(userData.email, newUser.id);
+        } catch {
+          // Non-fatal — cleaner can still register; onboarding triggered later
+          console.error("[Stripe] Failed to create Connect account for cleaner", newUser.id);
+        }
+
         await tx.cleanerProfile.create({
-          data: { userId: newUser.id, displayName: userData.name },
+          data: {
+            userId: newUser.id,
+            displayName: userData.name,
+            ...(stripeAccountId ? { stripeAccountId } : {}),
+          },
         });
       } else if (userData.role === "CUSTOMER") {
+        // Silently create Stripe Customer so we can charge them later
+        let stripeCustomerId: string | undefined;
+        try {
+          const customer = await createStripeCustomer(
+            userData.email,
+            userData.name
+            // no payment method at registration time
+          );
+          stripeCustomerId = customer.id;
+        } catch {
+          console.error("[Stripe] Failed to create Stripe customer for", newUser.id);
+        }
+
         await tx.customerProfile.create({
-          data: { userId: newUser.id, name: userData.name },
+          data: {
+            userId: newUser.id,
+            name: userData.name,
+            ...(stripeCustomerId ? { stripeCustomerId } : {}),
+          },
         });
       }
 

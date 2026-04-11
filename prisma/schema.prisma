@@ -52,6 +52,9 @@ model CustomerProfile {
   name         String?
   profilePhoto String?
 
+  // Stripe
+  stripeCustomerId String? // Stripe Customer ID for payment processing
+
   // Location
   address   String?
   city      String?
@@ -89,6 +92,10 @@ model CleanerProfile {
   // Preferences
   propertyTypeIds      String[] @db.ObjectId
   additionalServiceIds String[] @db.ObjectId
+
+  // Stripe Connect
+  stripeAccountId String?          // Stripe Express Account ID (acct_xxx)
+  stripeOnboarded Boolean @default(false) // true once details_submitted && charges_enabled
 
   // Stats
   avgRating    Float @default(0)
@@ -216,7 +223,7 @@ model Booking {
 
   paymentIntentId String? // Stripe Payment Intent ID
   status          BookingStatus @default(PENDING)
-  paymentStatus   String        @default("PENDING") // PENDING, PAID, FAILED, REFUNDED
+  paymentStatus   String        @default("PENDING") // PENDING, PAYMENT_HELD, PAID, FAILED, REFUNDED, CANCELLED
 
   // Reschedule Fields
   rescheduleDate      DateTime?
