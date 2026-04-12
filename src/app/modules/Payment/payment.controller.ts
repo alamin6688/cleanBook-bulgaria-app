@@ -194,6 +194,102 @@ const handleWebhook = catchAsync(async (req: Request, res: Response) => {
   res.status(200).json({ received: true });
 });
 
+// ─────────────────────────────────────────────
+// BANK ACCOUNT MANAGEMENT (for Cleaners)
+// ─────────────────────────────────────────────
+
+const addBankAccount = catchAsync(async (req: Request, res: Response) => {
+  const cleanerId = req.user.id;
+  const { bankToken } = req.body;
+
+  if (!bankToken) {
+    return sendResponse(res, {
+      statusCode: httpStatus.BAD_REQUEST,
+      success: false,
+      message: "bankToken is required",
+      data: null,
+    });
+  }
+
+  const result = await PaymentService.addBankAccount(cleanerId, bankToken);
+  sendResponse(res, {
+    statusCode: httpStatus.CREATED,
+    success: true,
+    message: "Bank account added successfully",
+    data: result,
+  });
+});
+
+const listBankAccounts = catchAsync(async (req: Request, res: Response) => {
+  const cleanerId = req.user.id;
+  const result = await PaymentService.listBankAccounts(cleanerId);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Bank accounts retrieved successfully",
+    data: result,
+  });
+});
+
+const getBankAccount = catchAsync(async (req: Request, res: Response) => {
+  const cleanerId = req.user.id;
+  const { bankAccountId } = req.params;
+  const result = await PaymentService.getBankAccount(cleanerId, bankAccountId as string);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Bank account retrieved successfully",
+    data: result,
+  });
+});
+
+const setDefaultBankAccount = catchAsync(async (req: Request, res: Response) => {
+  const cleanerId = req.user.id;
+  const { bankAccountId } = req.params;
+  const result = await PaymentService.setDefaultBankAccount(cleanerId, bankAccountId as string);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Bank account set as default successfully",
+    data: result,
+  });
+});
+
+const deleteBankAccount = catchAsync(async (req: Request, res: Response) => {
+  const cleanerId = req.user.id;
+  const { bankAccountId } = req.params;
+  const result = await PaymentService.deleteBankAccount(cleanerId, bankAccountId as string);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Bank account deleted successfully",
+    data: result,
+  });
+});
+
+const verifyBankAccount = catchAsync(async (req: Request, res: Response) => {
+  const cleanerId = req.user.id;
+  const { bankAccountId } = req.params;
+  const { amounts } = req.body;
+
+  if (!amounts || !Array.isArray(amounts)) {
+    return sendResponse(res, {
+      statusCode: httpStatus.BAD_REQUEST,
+      success: false,
+      message: "amounts (array) is required for verification",
+      data: null,
+    });
+  }
+
+  const result = await PaymentService.verifyBankAccount(cleanerId, bankAccountId as string, amounts);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "Bank account verification submitted",
+    data: result,
+  });
+});
+
 export const PaymentController = {
   getOnboardingLink,
   getDashboardLink,
@@ -202,4 +298,11 @@ export const PaymentController = {
   cancelHeldPayment,
   attachPaymentMethod,
   handleWebhook,
+  // Bank Account Management
+  addBankAccount,
+  listBankAccounts,
+  getBankAccount,
+  setDefaultBankAccount,
+  deleteBankAccount,
+  verifyBankAccount,
 };

@@ -2,6 +2,7 @@
 import httpStatus from "http-status";
 import ApiError from "../../../errors/apiError";
 import prisma from "../../../lib/prisma";
+import { PaymentService } from "../Payment/payment.service";
 import { IBookingSlotQuery, ICreateBooking } from "./booking.interface";
 import { BookingStatus } from "@prisma/client";
 import {
@@ -1032,6 +1033,32 @@ const requestCompletion = async (
     throw new ApiError(
       httpStatus.BAD_REQUEST,
       `Cannot request completion for a booking with status ${booking.status}`
+    );
+  }
+
+  // Enforcement: Verify cleaner has a default bank account set
+  try {
+    const bankAccounts = await PaymentService.listBankAccounts(cleanerId);
+    const hasDefault = bankAccounts.some((acc: any) => acc.default_for_currency === true);
+    
+    if (bankAccounts.length === 0) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        "You must add a bank account in Payment Settings before requesting completion."
+      );
+    }
+
+    if (!hasDefault) {
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        "You have multiple bank accounts but no active default selected. Please go to your Payment Settings and select a default bank account to receive your payout."
+      );
+    }
+  } catch (err: any) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError(
+      httpStatus.BAD_REQUEST,
+      "Please complete your Stripe Bank Setup in Payment Settings before requesting completion."
     );
   }
 

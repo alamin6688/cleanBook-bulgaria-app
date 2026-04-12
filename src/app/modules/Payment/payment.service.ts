@@ -1,7 +1,17 @@
 import httpStatus from "http-status";
 import ApiError from "../../../errors/apiError";
 import prisma from "../../../lib/prisma";
-import stripe from "../../../utils/Stripe/stripe";
+import stripe, {
+  addBankAccount as stripeAddBank,
+  listBankAccounts as stripeListBanks,
+  retrieveBankAccount as stripeGetBank,
+  updateBankAccount as stripeUpdateBank,
+  deleteBankAccount as stripeDeleteBank,
+  verifyBankAccount as stripeVerifyBank,
+  StripeExternalAccountResponse,
+  StripeBankAccountListResponse,
+  StripeDeletedExternalAccountResponse,
+} from "../../../utils/Stripe/stripe";
 import { BookingStatus } from "@prisma/client";
 
 // ─────────────────────────────────────────────
@@ -29,11 +39,16 @@ const getOnboardingLink = async (cleanerId: string) => {
     const account = await stripe.accounts.create({
       controller: {
         fees: { payer: "application" },
-        losses: { payments: "application" },
-        stripe_dashboard: { type: "express" },
+        losses: { payments: "stripe" },
+        requirement_collection: "stripe",
+        stripe_dashboard: { type: "none" },
       },
       country: "US",
       email: cleaner.email,
+      capabilities: {
+        transfers: { requested: true },
+        card_payments: { requested: true },
+      },
       business_type: "individual",
       metadata: { cleanerId },
     });
@@ -157,9 +172,10 @@ const holdPayment = async (
     await stripe.paymentMethods.attach(paymentMethodId, { customer: stripeCustomerId });
   }
 
-  // 7. Calculate amounts
-  const amountInCents = Math.round(booking.totalCharge * 100);
-  const platformFee = Math.round(amountInCents * 0.1); // 10% platform cut
+  // 7. Calculate amounts based on +5% Customer / -5% Cleaner logic
+  const amountInCents = Math.round(booking.totalCharge * 100); // Total customer pays ($105)
+  const cleanerReceivesInCents = Math.round(booking.charge * 0.95 * 100); // Cleaner gets Base - 5% ($95)
+  const platformFeeInCents = amountInCents - cleanerReceivesInCents; // Platform takes the difference ($10)
 
   // 8. Create PaymentIntent — HOLD, do not capture yet
   const paymentIntent = await stripe.paymentIntents.create({
@@ -173,7 +189,7 @@ const holdPayment = async (
     transfer_data: {
       destination: cleanerProfile.stripeAccountId, // release to cleaner's bank
     },
-    application_fee_amount: platformFee, // platform 10% cut
+    application_fee_amount: platformFeeInCents, // platform cut ($10)
     metadata: {
       bookingId,
       customerId,
@@ -195,8 +211,8 @@ const holdPayment = async (
     paymentIntentId: paymentIntent.id,
     status: paymentIntent.status,
     amountHeld: booking.totalCharge,
-    platformFee: platformFee / 100,
-    cleanerReceives: (amountInCents - platformFee) / 100,
+    platformFee: platformFeeInCents / 100,
+    cleanerReceives: cleanerReceivesInCents / 100,
     message: "Payment held. Funds will be released when you confirm the job is done.",
   };
 };
@@ -446,6 +462,105 @@ const attachPaymentMethod = async (customerId: string, paymentMethodId: string) 
   return { message: "Payment method attached successfully" };
 };
 
+// ─────────────────────────────────────────────
+// BANK ACCOUNT MANAGEMENT (for Cleaners)
+// ─────────────────────────────────────────────
+
+const getCleanerStripeAccountId = async (cleanerId: string) => {
+  const profile = await prisma.cleanerProfile.findUnique({
+    where: { userId: cleanerId },
+    include: { user: true },
+  });
+
+  if (!profile) {
+    throw new ApiError(httpStatus.NOT_FOUND, "Cleaner profile not found.");
+  }
+
+  if (profile.stripeAccountId) {
+    return profile.stripeAccountId;
+  }
+
+  // Automatically create Stripe account if it doesn't exist so they can add bank details right away
+  const account = await stripe.accounts.create({
+    controller: {
+      fees: { payer: "application" },
+      losses: { payments: "stripe" },
+      requirement_collection: "stripe",
+      stripe_dashboard: { type: "none" },
+    },
+    country: "US", // You can change this to your expected default country
+    email: profile.user.email,
+    capabilities: {
+      transfers: { requested: true },
+      card_payments: { requested: true },
+    },
+    business_type: "individual",
+    metadata: { cleanerId },
+  });
+
+  await prisma.cleanerProfile.update({
+    where: { userId: cleanerId },
+    data: { stripeAccountId: account.id },
+  });
+
+  return account.id;
+};
+
+const addBankAccount = async (
+  cleanerId: string,
+  bankToken: string
+): Promise<StripeExternalAccountResponse> => {
+  const stripeAccountId = await getCleanerStripeAccountId(cleanerId);
+  const bankAccount = await stripeAddBank(stripeAccountId, bankToken);
+  return bankAccount;
+};
+
+const listBankAccounts = async (cleanerId: string): Promise<StripeBankAccountListResponse> => {
+  const stripeAccountId = await getCleanerStripeAccountId(cleanerId);
+  const bankAccounts = await stripeListBanks(stripeAccountId);
+  return bankAccounts;
+};
+
+const getBankAccount = async (
+  cleanerId: string,
+  bankAccountId: string
+): Promise<StripeExternalAccountResponse> => {
+  const stripeAccountId = await getCleanerStripeAccountId(cleanerId);
+  const bankAccount = await stripeGetBank(stripeAccountId, bankAccountId);
+  return bankAccount;
+};
+
+const setDefaultBankAccount = async (
+  cleanerId: string,
+  bankAccountId: string
+): Promise<StripeExternalAccountResponse> => {
+  const stripeAccountId = await getCleanerStripeAccountId(cleanerId);
+  // Stripe documentation: default_for_currency=true on the external account
+  const updated = await stripeUpdateBank(stripeAccountId, bankAccountId, {
+    default_for_currency: true,
+  });
+  return updated;
+};
+
+const deleteBankAccount = async (
+  cleanerId: string,
+  bankAccountId: string
+): Promise<StripeDeletedExternalAccountResponse> => {
+  const stripeAccountId = await getCleanerStripeAccountId(cleanerId);
+  const deleted = await stripeDeleteBank(stripeAccountId, bankAccountId);
+  return deleted;
+};
+
+const verifyBankAccount = async (
+  cleanerId: string,
+  bankAccountId: string,
+  amounts: number[]
+): Promise<StripeExternalAccountResponse> => {
+  const stripeAccountId = await getCleanerStripeAccountId(cleanerId);
+  const verified = await stripeVerifyBank(stripeAccountId, bankAccountId, amounts);
+  return verified;
+};
+
 export const PaymentService = {
   // Phase 1
   getOnboardingLink,
@@ -461,4 +576,11 @@ export const PaymentService = {
   handleWebhookEvent,
   // Utilities
   attachPaymentMethod,
+  // Bank Account Management
+  addBankAccount,
+  listBankAccounts,
+  getBankAccount,
+  setDefaultBankAccount,
+  deleteBankAccount,
+  verifyBankAccount,
 };

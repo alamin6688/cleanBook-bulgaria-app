@@ -12,7 +12,21 @@ const refundPaymentSchema = z.object({
   }),
 });
 
+const addBankAccountSchema = z.object({
+  body: z.object({
+    bankToken: z.string().nonempty({ message: "Bank token is required" }),
+  }),
+});
+
+const bankAccountIdSchema = z.object({
+  params: z.object({
+    bankAccountId: z.string().nonempty({ message: "Bank account ID is required" }),
+  }),
+});
+
 export const PaymentValidation = {
   createPaymentIntentSchema,
   refundPaymentSchema,
+  addBankAccountSchema,
+  bankAccountIdSchema,
 };

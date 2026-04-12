@@ -13,8 +13,9 @@ export const createStripeAccount = async (userEmail: string, cleanerId: string) 
     const account = await stripe.accounts.create({
       controller: {
         fees: { payer: "application" },
-        losses: { payments: "application" },
-        stripe_dashboard: { type: "express" },
+        losses: { payments: "stripe" },
+        requirement_collection: "stripe",
+        stripe_dashboard: { type: "none" },
       },
       country: "US",
       email: userEmail,
@@ -234,6 +235,109 @@ export const getLoginLink = async (stripeAccountId: string) => {
     throw new ApiError(
       httpStatus.INTERNAL_SERVER_ERROR,
       error.message || "Failed to retrieve login link"
+    );
+  }
+};
+
+// ─── EXTERNAL ACCOUNTS (BANK ACCOUNTS) ──────────────────
+export type StripeExternalAccountResponse = Awaited<
+  ReturnType<typeof stripe.accounts.createExternalAccount>
+>;
+export type StripeBankAccountListResponse = Awaited<
+  ReturnType<typeof stripe.accounts.listExternalAccounts>
+>["data"];
+export type StripeDeletedExternalAccountResponse = Awaited<
+  ReturnType<typeof stripe.accounts.deleteExternalAccount>
+>;
+
+export const addBankAccount = async (
+  stripeAccountId: string,
+  bankToken: string
+): Promise<StripeExternalAccountResponse> => {
+  try {
+    return await stripe.accounts.createExternalAccount(stripeAccountId, {
+      external_account: bankToken,
+    });
+  } catch (error: any) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      error.message || "Failed to add bank account"
+    );
+  }
+};
+
+export const listBankAccounts = async (
+  stripeAccountId: string
+): Promise<StripeBankAccountListResponse> => {
+  try {
+    const accounts = await stripe.accounts.listExternalAccounts(stripeAccountId, {
+      object: "bank_account",
+    });
+    return accounts.data;
+  } catch (error: any) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      error.message || "Failed to list bank accounts"
+    );
+  }
+};
+
+export const retrieveBankAccount = async (
+  stripeAccountId: string,
+  bankAccountId: string
+): Promise<StripeExternalAccountResponse> => {
+  try {
+    return await stripe.accounts.retrieveExternalAccount(stripeAccountId, bankAccountId);
+  } catch (error: any) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      error.message || "Failed to retrieve bank account"
+    );
+  }
+};
+
+export const updateBankAccount = async (
+  stripeAccountId: string,
+  bankAccountId: string,
+  data: Parameters<(typeof stripe.accounts)["updateExternalAccount"]>[2]
+): Promise<StripeExternalAccountResponse> => {
+  try {
+    return await stripe.accounts.updateExternalAccount(stripeAccountId, bankAccountId, data);
+  } catch (error: any) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      error.message || "Failed to update bank account"
+    );
+  }
+};
+
+export const deleteBankAccount = async (
+  stripeAccountId: string,
+  bankAccountId: string
+): Promise<StripeDeletedExternalAccountResponse> => {
+  try {
+    return await stripe.accounts.deleteExternalAccount(stripeAccountId, bankAccountId);
+  } catch (error: any) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      error.message || "Failed to delete bank account"
+    );
+  }
+};
+
+export const verifyBankAccount = async (
+  stripeAccountId: string,
+  bankAccountId: string,
+  amounts: number[]
+): Promise<StripeExternalAccountResponse> => {
+  try {
+    return (await (stripe.accounts as any).verifyExternalAccount(stripeAccountId, bankAccountId, {
+      amounts,
+    })) as StripeExternalAccountResponse;
+  } catch (error: any) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      error.message || "Failed to verify bank account"
     );
   }
 };
