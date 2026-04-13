@@ -2,9 +2,11 @@ import { Server } from "http";
 import app from "./app";
 import config from "./config";
 import prisma from "./lib/prisma";
+import { BookingService } from "./app/modules/Booking/booking.service";
 import logger from "./utils/logger/logger";
 
 let server: Server;
+let cleanupInterval: NodeJS.Timeout;
 
 async function main() {
   try {
@@ -15,7 +17,15 @@ async function main() {
     // 2. Start HTTP server
     server = app.listen(config.port, config.host, () => {
       logger.info(`🚀 Server running on ${config.host}:${config.port} [${config.env}]`);
-      // logger.info(`📄 API docs: http://localhost:${config.port}/api/docs`);
+      
+      // Automatic cleanup: Mark PENDING bookings > 3 hours old as CANCELLED every 15 minutes
+      cleanupInterval = setInterval(async () => {
+        try {
+          await BookingService.cleanupPendingBookings();
+        } catch (error) {
+          logger.error("[Cleanup Error]", error);
+        }
+      }, 15 * 60 * 1000); // 15 minutes
     });
 
     server.on("error", (error: NodeJS.ErrnoException) => {
@@ -40,6 +50,11 @@ main();
 
 const gracefulShutdown = async (signal: string) => {
   logger.info(`${signal} received. Starting graceful shutdown...`);
+
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    logger.info("Background cleanup interval cleared.");
+  }
 
   if (server) {
     server.close(async () => {

@@ -26,12 +26,15 @@ const flattenUser = (user: any) => {
     user.role === "CLEANER"
       ? user.cleanerProfile?.profilePhoto
       : user.customerProfile?.profilePhoto;
-  
+
   // Flatten location
   const city = user.role === "CLEANER" ? user.cleanerProfile?.city : user.customerProfile?.city;
-  const address = user.role === "CLEANER" ? user.cleanerProfile?.address : user.customerProfile?.address;
-  const latitude = user.role === "CLEANER" ? user.cleanerProfile?.latitude : user.customerProfile?.latitude;
-  const longitude = user.role === "CLEANER" ? user.cleanerProfile?.longitude : user.customerProfile?.longitude;
+  const address =
+    user.role === "CLEANER" ? user.cleanerProfile?.address : user.customerProfile?.address;
+  const latitude =
+    user.role === "CLEANER" ? user.cleanerProfile?.latitude : user.customerProfile?.latitude;
+  const longitude =
+    user.role === "CLEANER" ? user.cleanerProfile?.longitude : user.customerProfile?.longitude;
 
   return { ...user, name, avatar, city, address, latitude, longitude };
 };
@@ -159,7 +162,13 @@ const getAvailableSlots = async (query: IBookingSlotQuery) => {
         gte: startOfDay(bookingDate),
         lt: addMinutes(startOfDay(bookingDate), 1440),
       },
-      status: { not: BookingStatus.CANCELLED },
+      OR: [
+        { status: { notIn: [BookingStatus.CANCELLED, BookingStatus.PENDING, BookingStatus.COMPLETE] } },
+        {
+          status: BookingStatus.PENDING,
+          createdAt: { gte: new Date(Date.now() - 3 * 60 * 60 * 1000) },
+        },
+      ],
     },
   });
 
@@ -310,7 +319,13 @@ const createBooking = async (userId: string, data: ICreateBooking) => {
         gte: startOfDay(bookingDate),
         lt: addMinutes(startOfDay(bookingDate), 1440),
       },
-      status: { not: BookingStatus.CANCELLED },
+      OR: [
+        { status: { notIn: [BookingStatus.CANCELLED, BookingStatus.PENDING, BookingStatus.COMPLETE] } },
+        {
+          status: BookingStatus.PENDING,
+          createdAt: { gte: new Date(Date.now() - 3 * 60 * 60 * 1000) },
+        },
+      ],
     },
   });
 
@@ -502,7 +517,7 @@ const getBookingById = async (id: string, userId: string, role: string) => {
     cleaner: flattenUser(booking.cleaner),
     customer: flattenUser(booking.customer),
   };
-}
+};
 
 const getBookingForPayment = async (bookingId: string, userId: string) => {
   const booking = await prisma.booking.findUnique({
@@ -809,8 +824,12 @@ const getAvailableCleaners = async (query: any) => {
       role: true,
       customerProfile: true, // Though role is CLEANER, good to be consistent
       cleanerProfile: {
-        include: { services: { where: serviceIds.length > 0 ? { serviceCategoryId: { in: serviceIds } } : undefined } }
-      }
+        include: {
+          services: {
+            where: serviceIds.length > 0 ? { serviceCategoryId: { in: serviceIds } } : undefined,
+          },
+        },
+      },
     },
   });
 
@@ -883,7 +902,7 @@ const getAvailableCleaners = async (query: any) => {
     });
   }
 
-  return results.map(cleaner => flattenUser(cleaner));
+  return results.map((cleaner) => flattenUser(cleaner));
 };
 
 const updateBookingStatus = async (
@@ -1036,29 +1055,19 @@ const requestCompletion = async (
     );
   }
 
-  // Enforcement: Verify cleaner has a default bank account set
-  try {
-    const bankAccounts = await PaymentService.listBankAccounts(cleanerId);
-    const hasDefault = bankAccounts.some((acc: any) => acc.default_for_currency === true);
-    
-    if (bankAccounts.length === 0) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        "You must add a bank account in Payment Settings before requesting completion."
-      );
-    }
+  if (!booking) throw new ApiError(httpStatus.NOT_FOUND, "Booking not found");
 
-    if (!hasDefault) {
-      throw new ApiError(
-        httpStatus.BAD_REQUEST,
-        "You have multiple bank accounts but no active default selected. Please go to your Payment Settings and select a default bank account to receive your payout."
-      );
-    }
-  } catch (err: any) {
-    if (err instanceof ApiError) throw err;
+  // Authentication check
+  if (booking.cleanerId !== cleanerId) {
+    throw new ApiError(httpStatus.FORBIDDEN, "This job is not assigned to you");
+  }
+
+  // Must be in a paid/active state
+  const validStatuses = [BookingStatus.CONFIRMED, BookingStatus.IN_PROGRESS];
+  if (!validStatuses.includes(booking.status)) {
     throw new ApiError(
       httpStatus.BAD_REQUEST,
-      "Please complete your Stripe Bank Setup in Payment Settings before requesting completion."
+      "You cannot request completion for a booking that hasn't been confirmed or is not in progress."
     );
   }
 
@@ -1100,23 +1109,32 @@ const confirmCompletion = async (bookingId: string, userId: string) => {
   }
 
   if (booking.status !== BookingStatus.COMPLETION_REQUESTED) {
+    if (booking.status === BookingStatus.COMPLETE) {
+      throw new ApiError(httpStatus.BAD_REQUEST, "Payment has already been released for this booking.");
+    }
     throw new ApiError(
       httpStatus.BAD_REQUEST,
       "Completion hasn't been requested for this booking yet"
     );
   }
 
-  const updatedBooking = await prisma.booking.update({
+  // 4. Trigger the Payment Release (Capture + Transfer)
+  // This handles the Stripe capture and the payout to the cleaner
+  await PaymentService.releasePayment(bookingId, userId);
+
+  // Return the final data (status is already updated by releasePayment)
+  const updatedBooking = await prisma.booking.findUnique({
     where: { id: bookingId },
-    data: {
-      status: BookingStatus.COMPLETE,
-    },
     include: {
       cleaner: { include: { cleanerProfile: true } },
       customer: { include: { customerProfile: true } },
       serviceCategory: true,
     },
   });
+
+  if (!updatedBooking) {
+    throw new ApiError(httpStatus.NOT_FOUND, "Booking could not be retrieved after confirmation");
+  }
 
   // Increment cleaner's total jobs
   await prisma.cleanerProfile.update({
@@ -1170,7 +1188,30 @@ const cancelCompletion = async (bookingId: string, userId: string) => {
   };
 };
 
+/**
+ * Periodically called to mark old pending bookings as CANCELLED.
+ */
+const cleanupPendingBookings = async () => {
+  const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+
+  const result = await prisma.booking.updateMany({
+    where: {
+      status: BookingStatus.PENDING,
+      createdAt: { lt: threeHoursAgo },
+    },
+    data: {
+      status: BookingStatus.CANCELLED,
+      cancelReason: "Payment timeout: booking not paid within 3 hours.",
+    },
+  });
+
+  if (result.count > 0) {
+    console.log(`[Cleanup] Auto-cancelled ${result.count} expired pending bookings.`);
+  }
+};
+
 export const BookingService = {
+  cleanupPendingBookings,
   getAvailableSlots,
   getCleanerAvailability,
   createBooking,

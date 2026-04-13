@@ -2,6 +2,7 @@ import httpStatus from "http-status";
 import ApiError from "../../../errors/apiError";
 import prisma from "../../../lib/prisma";
 import stripe, {
+  createStripeAccount,
   addBankAccount as stripeAddBank,
   listBankAccounts as stripeListBanks,
   retrieveBankAccount as stripeGetBank,
@@ -481,29 +482,15 @@ const getCleanerStripeAccountId = async (cleanerId: string) => {
   }
 
   // Automatically create Stripe account if it doesn't exist so they can add bank details right away
-  const account = await stripe.accounts.create({
-    controller: {
-      fees: { payer: "application" },
-      losses: { payments: "stripe" },
-      requirement_collection: "stripe",
-      stripe_dashboard: { type: "none" },
-    },
-    country: "US", // You can change this to your expected default country
-    email: profile.user.email,
-    capabilities: {
-      transfers: { requested: true },
-      card_payments: { requested: true },
-    },
-    business_type: "individual",
-    metadata: { cleanerId },
-  });
+  const cleanerName = profile.displayName || profile.user.email.split("@")[0];
+  const stripeAccountId = await createStripeAccount(profile.user.email, cleanerId, cleanerName);
 
   await prisma.cleanerProfile.update({
     where: { userId: cleanerId },
-    data: { stripeAccountId: account.id },
+    data: { stripeAccountId },
   });
 
-  return account.id;
+  return stripeAccountId;
 };
 
 const addBankAccount = async (

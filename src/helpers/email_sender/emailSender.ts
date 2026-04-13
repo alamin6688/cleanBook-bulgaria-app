@@ -14,7 +14,7 @@ const emailSender = async (subject: string, email: string, html: string) => {
   const emailTransport = transporter;
 
   const mailOptions = {
-    from: `"Project Name" <${config.emailSender.email}>`,
+    from: `"CleanBook" <${config.emailSender.email}>`,
     to: email,
     subject,
     html,

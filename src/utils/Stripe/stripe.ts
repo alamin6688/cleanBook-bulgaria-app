@@ -8,13 +8,22 @@ const stripe: InstanceType<typeof Stripe> = new Stripe(config.stripe.secretKey a
 });
 
 // ─── CLEANER ACCOUNT (Express) ───────────────────────────
-export const createStripeAccount = async (userEmail: string, cleanerId: string) => {
+export const createStripeAccount = async (
+  userEmail: string,
+  cleanerId: string,
+  cleanerName: string = "Cleaner"
+) => {
   try {
+    // Split name into first and last
+    const nameParts = cleanerName.split(" ");
+    const firstName = nameParts[0] || "Cleaner";
+    const lastName = nameParts.slice(1).join(" ") || "User";
+
     const account = await stripe.accounts.create({
       controller: {
         fees: { payer: "application" },
-        losses: { payments: "stripe" },
-        requirement_collection: "stripe",
+        losses: { payments: "application" },
+        requirement_collection: "application",
         stripe_dashboard: { type: "none" },
       },
       country: "US",
@@ -24,19 +33,21 @@ export const createStripeAccount = async (userEmail: string, cleanerId: string) 
         card_payments: { requested: true },
       },
       business_type: "individual",
-      settings: {
-        payouts: {
-          schedule: {
-            interval: "daily",
-          },
-        },
+      individual: {
+        first_name: firstName,
+        last_name: lastName,
+        email: userEmail,
+      },
+      business_profile: {
+        mcc: "7349", // Cleaning, Maintenance and Janitorial Services
+        url: "https://juscharr.com",
       },
       metadata: {
-        cleanerId, // links stripe account to your DB cleaner
+        cleanerId,
       },
     });
 
-    return account.id; // save this in your DB
+    return account.id;
   } catch (error: any) {
     if (error instanceof ApiError) throw error;
     throw new ApiError(

@@ -8,7 +8,7 @@ export const otpEmail = (randomOtp: string) => {
         <p>Please use this OTP to complete your authentication process. This OTP is valid for the next 5 minutes.</p>
         <p>If you did not request this OTP, please ignore this email.</p>
         <br/>
-        <p>Best regards,<br/>The Team</p>
+        <p>Best regards,<br/>CleanBook App Team</p>
     </div>
     `;
   return html;

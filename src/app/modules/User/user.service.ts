@@ -263,8 +263,10 @@ const getNearbyCleaners = async (userLat: number, userLng: number, radiusKm: num
 const enrichCleanerProfile = async (cleanerProfile: any) => {
   if (!cleanerProfile) return null;
 
-  // 1. Fetch related categories in parallel
-  const [propertyTypes, serviceCategories] = await Promise.all([
+  const cleanerId = cleanerProfile.userId;
+
+  // 1. Fetch related data and Bookings for stats in parallel
+  const [propertyTypes, serviceCategories, bookings] = await Promise.all([
     cleanerProfile.propertyTypeIds?.length
       ? prisma.propertyCategory.findMany({
           where: { id: { in: cleanerProfile.propertyTypeIds } },
@@ -275,7 +277,39 @@ const enrichCleanerProfile = async (cleanerProfile: any) => {
       where: { id: { in: (cleanerProfile.services ?? []).map((s: any) => s.serviceCategoryId) } },
       select: { id: true, banner: true },
     }),
+    prisma.booking.findMany({
+      where: { cleanerId, status: "COMPLETE" },
+    }),
   ]);
+
+  // 2. Calculate Dashboard Stats
+  const now = new Date();
+  const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  let totalEarnings = 0;
+  let weeklyEarnings = 0;
+  let totalHours = 0;
+
+  bookings.forEach((b) => {
+    const cleanerShare = b.charge * 0.95;
+    totalEarnings += cleanerShare;
+
+    if (b.updatedAt >= sevenDaysAgo) {
+      weeklyEarnings += cleanerShare;
+    }
+
+    // Parse duration from "HH:mm" strings
+    try {
+      const startParts = b.startTime.split(":");
+      const endParts = b.endTime.split(":");
+      const startMins = parseInt(startParts[0]) * 60 + parseInt(startParts[1]);
+      const endMins = parseInt(endParts[0]) * 60 + parseInt(endParts[1]);
+      const diffHrs = (endMins - startMins) / 60;
+      if (diffHrs > 0) totalHours += diffHrs;
+    } catch (e) {
+      // Skip if time format is invalid
+    }
+  });
 
   // 2. Map services and attach the banner from parent category
   const enrichedServices = (cleanerProfile.services ?? []).map((s: any) => {
@@ -319,14 +353,50 @@ const enrichCleanerProfile = async (cleanerProfile: any) => {
     propertyTypes,
     services: enrichedServices,
     reviews: enrichedReviews,
+    dashboardStats: {
+      totalEarnings: Number(totalEarnings.toFixed(2)),
+      weeklyEarnings: Number(weeklyEarnings.toFixed(2)),
+      totalHours: Number(totalHours.toFixed(1)),
+    },
+    paymentInfo: {
+      stripeAccountId: cleanerProfile.stripeAccountId,
+      isPayoutReady: !!cleanerProfile.stripeAccountId && !!cleanerProfile.stripeOnboarded,
+    },
   };
 };
 
 const enrichCustomerProfile = async (customerProfile: any) => {
   if (!customerProfile) return null;
 
-  const { id, userId, ...rest } = customerProfile;
-  return rest;
+  const customerId = customerProfile.userId;
+
+  // Fetch bookings and reviews to calculate stats
+  const [bookings, reviews] = await Promise.all([
+    prisma.booking.findMany({
+      where: { customerId, status: "COMPLETE" },
+    }),
+    prisma.review.findMany({
+      where: { customerId },
+    }),
+  ]);
+
+  const totalSpent = bookings.reduce((sum, b) => sum + b.totalCharge, 0);
+  const avgRatingGiven =
+    reviews.length > 0 ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length : 0;
+
+  const { id, userId, stripeCustomerId, ...rest } = customerProfile;
+  return {
+    ...rest,
+    dashboardStats: {
+      totalSpentMoney: Number(totalSpent.toFixed(2)),
+      totalBookings: bookings.length,
+      avgRatingGiven: Number(avgRatingGiven.toFixed(1)),
+    },
+    paymentInfo: {
+      stripeCustomerId,
+      hasSavedCard: !!stripeCustomerId,
+    },
+  };
 };
 
 const getUserById = async (id: string) => {
@@ -353,6 +423,8 @@ const getUserById = async (id: string) => {
           city: true,
           latitude: true,
           longitude: true,
+          stripeAccountId: true,
+          stripeOnboarded: true,
           // meaningful cleaner fields
           displayName: true,
           bio: true,
@@ -419,20 +491,12 @@ const getUserById = async (id: string) => {
       user.role === "CLEANER"
         ? user.cleanerProfile?.profilePhoto
         : user.customerProfile?.profilePhoto,
-    address:
-      user.role === "CLEANER"
-        ? user.cleanerProfile?.address
-        : user.customerProfile?.address,
-    city:
-      user.role === "CLEANER" ? user.cleanerProfile?.city : user.customerProfile?.city,
+    address: user.role === "CLEANER" ? user.cleanerProfile?.address : user.customerProfile?.address,
+    city: user.role === "CLEANER" ? user.cleanerProfile?.city : user.customerProfile?.city,
     latitude:
-      user.role === "CLEANER"
-        ? user.cleanerProfile?.latitude
-        : user.customerProfile?.latitude,
+      user.role === "CLEANER" ? user.cleanerProfile?.latitude : user.customerProfile?.latitude,
     longitude:
-      user.role === "CLEANER"
-        ? user.cleanerProfile?.longitude
-        : user.customerProfile?.longitude,
+      user.role === "CLEANER" ? user.cleanerProfile?.longitude : user.customerProfile?.longitude,
   };
 
   // Remove profiles from root and add the enriched one
@@ -442,6 +506,7 @@ const getUserById = async (id: string) => {
   return {
     ...flatData,
     cleanerProfile: user.role === "CLEANER" ? profile : undefined,
+    customerProfile: user.role === "CUSTOMER" ? profile : undefined,
   };
 };
 
@@ -481,19 +546,24 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
           const found = existing.find(
             (e) => e.id === input || normalize(e.name) === normalize(input)
           );
-          if (!found) throw new ApiError(httpStatus.BAD_REQUEST, `Property Category not found: ${input}`);
+          if (!found)
+            throw new ApiError(httpStatus.BAD_REQUEST, `Property Category not found: ${input}`);
           return found.id;
         });
       }
 
-      const additionalServiceInputs = (data as any).additionalServices || (data as any).additionalServiceIds || [];
+      const additionalServiceInputs =
+        (data as any).additionalServices || (data as any).additionalServiceIds || [];
       if (additionalServiceInputs.length > 0) {
-        const existing = await tx.additionalServiceCategory.findMany({ select: { id: true, name: true } });
+        const existing = await tx.additionalServiceCategory.findMany({
+          select: { id: true, name: true },
+        });
         data.additionalServiceIds = additionalServiceInputs.map((input: string) => {
           const found = existing.find(
             (e) => e.id === input || normalize(e.name) === normalize(input)
           );
-          if (!found) throw new ApiError(httpStatus.BAD_REQUEST, `Additional Service not found: ${input}`);
+          if (!found)
+            throw new ApiError(httpStatus.BAD_REQUEST, `Additional Service not found: ${input}`);
           return found.id;
         });
       }
@@ -503,8 +573,14 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
         data.services = data.services.map((s: any) => {
           const ref = s.serviceCategoryId || s.name;
           const found = existing.find((e) => e.id === ref || normalize(e.name) === normalize(ref));
-          if (!found) throw new ApiError(httpStatus.BAD_REQUEST, `Service Category not found: ${ref}`);
-          return { ...s, serviceCategoryId: found.id, name: found.name, pricePerHour: s.pricePerHour };
+          if (!found)
+            throw new ApiError(httpStatus.BAD_REQUEST, `Service Category not found: ${ref}`);
+          return {
+            ...s,
+            serviceCategoryId: found.id,
+            name: found.name,
+            pricePerHour: s.pricePerHour,
+          };
         });
       }
 
@@ -539,7 +615,8 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
           workingDays: data.workingDays !== undefined ? data.workingDays : undefined,
           serviceAreas: data.serviceAreas !== undefined ? data.serviceAreas : undefined,
           propertyTypeIds: data.propertyTypeIds !== undefined ? data.propertyTypeIds : undefined,
-          additionalServiceIds: data.additionalServiceIds !== undefined ? data.additionalServiceIds : undefined,
+          additionalServiceIds:
+            data.additionalServiceIds !== undefined ? data.additionalServiceIds : undefined,
           workFrom: data.workFrom !== undefined ? data.workFrom : undefined,
           workTo: data.workTo !== undefined ? data.workTo : undefined,
           blockOffDates: data.blockOffDates !== undefined ? data.blockOffDates : undefined,

@@ -8,7 +8,7 @@ export const passwordResetEmail = (otp: string) => {
         <p>This OTP is valid for <strong>5 minutes</strong>. Do not share it with anyone.</p>
         <p>If you did not request a password reset, please ignore this email. Your password will remain unchanged.</p>
         <br/>
-        <p>Best regards,<br/>The Team</p>
+        <p>Best regards,<br/>CleanBook App Team</p>
     </div>
     `;
   return html;
