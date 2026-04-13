@@ -101,6 +101,17 @@ const getProfile = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const changePassword = catchAsync(async (req: Request, res: Response) => {
+  const userId = req.user.id;
+  const result = await UserService.changePassword(userId, req.body);
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: result.message,
+    data: null,
+  });
+});
+
 export const UserController = {
   updateLanguage,
   updateLocation,
@@ -110,4 +121,5 @@ export const UserController = {
   updateProfile,
   getUserById,
   getProfile,
+  changePassword,
 };

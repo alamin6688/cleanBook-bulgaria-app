@@ -1,6 +1,7 @@
 import httpStatus from "http-status";
 import ApiError from "../../../errors/apiError";
 import prisma from "../../../lib/prisma";
+import { hashItem, compareItem } from "../../../utils/hashAndCompareItem";
 import {
   IUpdateBasicProfileInput,
   IUpdateCleanerProfileInput,
@@ -662,6 +663,39 @@ const updateProfile = async (userId: string, data: IUpdateProfileInput) => {
   return await getUserById(userId);
 };
 
+const changePassword = async (userId: string, data: any) => {
+  const { oldPassword, newPassword } = data;
+
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new ApiError(httpStatus.NOT_FOUND, "User not found");
+  }
+
+  // Ensure user has a password set (e.g. not an OAuth user without password)
+  if (!user.password) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "No password set for this account. Please use password reset.");
+  }
+
+  // Check if old password matches
+  const isMatch = await compareItem(oldPassword, user.password);
+  if (!isMatch) {
+    throw new ApiError(httpStatus.BAD_REQUEST, "Incorrect old password");
+  }
+
+  // Hash new password and save
+  const hashedNewPassword = await hashItem(newPassword);
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { password: hashedNewPassword },
+  });
+
+  return { message: "Password changed successfully" };
+};
+
 export const UserService = {
   updateLanguage,
   updateLocation,
@@ -670,4 +704,5 @@ export const UserService = {
   getNearbyCleaners,
   getUserById,
   updateProfile,
+  changePassword,
 };

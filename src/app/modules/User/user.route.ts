@@ -19,4 +19,11 @@ router.patch(
   UserController.updateProfile
 );
 
+router.patch(
+  "/change-password",
+  auth("CUSTOMER", "CLEANER", "ADMIN"),
+  RequestValidation.validateRequest(UserValidation.changePasswordZodSchema),
+  UserController.changePassword
+);
+
 export const UserRoutes = router;
