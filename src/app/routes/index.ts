@@ -11,6 +11,7 @@ import { PaymentRoutes } from "../modules/Payment/payment.route";
 import { PopularServiceRoutes } from "../modules/PopularService/popularService.route";
 import { ReviewRoutes } from "../modules/Review/review.route";
 import { DashboardRoutes } from "../modules/Cleaner/Dashboard/dashboard.route";
+import { ChatRoutes } from "../modules/Chat/chat.route";
 
 const router = express.Router();
 
@@ -58,6 +59,10 @@ const moduleRoutes = [
   {
     path: "/cleaner/dashboard",
     route: DashboardRoutes,
+  },
+  {
+    path: "/chat",
+    route: ChatRoutes,
   },
 ];
 

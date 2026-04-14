@@ -42,6 +42,10 @@ model User {
   cleanerBookings  Booking[] @relation("CleanerBookings")
 
   customerReviews Review[] @relation("CustomerReviews")
+  
+  customerChatRooms ChatRoom[] @relation("CustomerChatRooms")
+  cleanerChatRooms  ChatRoom[] @relation("CleanerChatRooms")
+  sentMessages      Message[]
 }
 
 model CustomerProfile {
@@ -270,4 +274,44 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+model ChatRoom {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  
+  customerId String @db.ObjectId
+  customer   User   @relation("CustomerChatRooms", fields: [customerId], references: [id])
+  
+  cleanerId  String @db.ObjectId
+  cleaner    User   @relation("CleanerChatRooms", fields: [cleanerId], references: [id])
+  
+  isLocked   Boolean @default(true) 
+  
+  lastMessage     String?
+  lastMessageTime DateTime?
+  
+  messages   Message[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([customerId, cleanerId])
+}
+
+model Message {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  
+  chatRoomId String   @db.ObjectId
+  chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
+  
+  senderId   String   @db.ObjectId
+  sender     User     @relation(fields: [senderId], references: [id])
+  
+  content    String
+  
+  isRead     Boolean  @default(false)
+  
+  isDeletedBySender Boolean @default(false)
+  
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }

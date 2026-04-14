@@ -3,6 +3,7 @@ import httpStatus from "http-status";
 import ApiError from "../../../errors/apiError";
 import prisma from "../../../lib/prisma";
 import { PaymentService } from "../Payment/payment.service";
+import { ChatService } from "../Chat/chat.service";
 import { IBookingSlotQuery, ICreateBooking } from "./booking.interface";
 import { BookingStatus } from "@prisma/client";
 import {
@@ -163,7 +164,11 @@ const getAvailableSlots = async (query: IBookingSlotQuery) => {
         lt: addMinutes(startOfDay(bookingDate), 1440),
       },
       OR: [
-        { status: { notIn: [BookingStatus.CANCELLED, BookingStatus.PENDING, BookingStatus.COMPLETE] } },
+        {
+          status: {
+            notIn: [BookingStatus.CANCELLED, BookingStatus.PENDING, BookingStatus.COMPLETE],
+          },
+        },
         {
           status: BookingStatus.PENDING,
           createdAt: { gte: new Date(Date.now() - 3 * 60 * 60 * 1000) },
@@ -320,7 +325,11 @@ const createBooking = async (userId: string, data: ICreateBooking) => {
         lt: addMinutes(startOfDay(bookingDate), 1440),
       },
       OR: [
-        { status: { notIn: [BookingStatus.CANCELLED, BookingStatus.PENDING, BookingStatus.COMPLETE] } },
+        {
+          status: {
+            notIn: [BookingStatus.CANCELLED, BookingStatus.PENDING, BookingStatus.COMPLETE],
+          },
+        },
         {
           status: BookingStatus.PENDING,
           createdAt: { gte: new Date(Date.now() - 3 * 60 * 60 * 1000) },
@@ -585,6 +594,8 @@ const confirmBooking = async (bookingId: string, userId: string) => {
       serviceCategory: true,
     },
   });
+
+  await ChatService.syncChatRoomLock(updatedBooking.customerId, updatedBooking.cleanerId);
 
   return {
     ...updatedBooking,
@@ -947,6 +958,8 @@ const updateBookingStatus = async (
     },
   });
 
+  await ChatService.syncChatRoomLock(updatedBooking.customerId, updatedBooking.cleanerId);
+
   return {
     ...updatedBooking,
     cleaner: flattenUser(updatedBooking.cleaner),
@@ -1012,7 +1025,7 @@ const acceptReschedule = async (bookingId: string, userId: string) => {
     );
   }
 
-  return await prisma.booking.update({
+  const updatedBooking = await prisma.booking.update({
     where: { id: bookingId },
     data: {
       status: BookingStatus.CONFIRMED,
@@ -1026,6 +1039,9 @@ const acceptReschedule = async (bookingId: string, userId: string) => {
       rescheduleNote: null,
     },
   });
+
+  await ChatService.syncChatRoomLock(updatedBooking.customerId, updatedBooking.cleanerId);
+  return updatedBooking;
 };
 
 const requestCompletion = async (
@@ -1087,6 +1103,8 @@ const requestCompletion = async (
     },
   });
 
+  await ChatService.syncChatRoomLock(updatedBooking.customerId, updatedBooking.cleanerId);
+
   return {
     ...updatedBooking,
     cleaner: flattenUser(updatedBooking.cleaner),
@@ -1110,7 +1128,10 @@ const confirmCompletion = async (bookingId: string, userId: string) => {
 
   if (booking.status !== BookingStatus.COMPLETION_REQUESTED) {
     if (booking.status === BookingStatus.COMPLETE) {
-      throw new ApiError(httpStatus.BAD_REQUEST, "Payment has already been released for this booking.");
+      throw new ApiError(
+        httpStatus.BAD_REQUEST,
+        "Payment has already been released for this booking."
+      );
     }
     throw new ApiError(
       httpStatus.BAD_REQUEST,
@@ -1143,6 +1164,8 @@ const confirmCompletion = async (bookingId: string, userId: string) => {
       totalJobs: { increment: 1 },
     },
   });
+
+  await ChatService.syncChatRoomLock(updatedBooking.customerId, updatedBooking.cleanerId);
 
   return {
     ...updatedBooking,
@@ -1180,6 +1203,8 @@ const cancelCompletion = async (bookingId: string, userId: string) => {
       serviceCategory: true,
     },
   });
+
+  await ChatService.syncChatRoomLock(updatedBooking.customerId, updatedBooking.cleanerId);
 
   return {
     ...updatedBooking,
