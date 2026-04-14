@@ -3,6 +3,7 @@ import ApiError from "../../../errors/apiError";
 import prisma from "../../../lib/prisma";
 import { BookingStatus } from "@prisma/client";
 import { NotificationService } from "../Notification/notification.service";
+import { isUserInRoom } from "../../../socket/socket";
 
 // ─────────────────────────────────────────────
 // Ensure chatroom exists or create it
@@ -269,13 +270,16 @@ const saveMessage = async (chatRoomId: string, senderId: string, content: string
       ? message.sender.cleanerProfile?.displayName
       : message.sender.customerProfile?.name;
 
-  await NotificationService.sendNotification({
-    receiverId,
-    title: `New message from ${senderName}`,
-    message: content,
-    type: "CHAT_MESSAGE",
-    metadata: { chatRoomId, senderId },
-  });
+  // Only send push notification if the receiver is NOT currently active in this chat room
+  if (!isUserInRoom(receiverId, chatRoomId)) {
+    await NotificationService.sendNotification({
+      receiverId,
+      title: `New message from ${senderName}`,
+      message: content,
+      type: "CHAT_MESSAGE",
+      metadata: { chatRoomId, senderId },
+    });
+  }
 
   return {
     id: message.id,

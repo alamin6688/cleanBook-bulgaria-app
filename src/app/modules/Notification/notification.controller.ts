@@ -3,6 +3,7 @@ import httpStatus from "http-status";
 import catchAsync from "../../../shared/catchAsync";
 import sendResponse from "../../../shared/sendResponse";
 import prisma from "../../../lib/prisma";
+import { getSocketIO } from "../../../socket/socket";
 
 const getMyNotifications = catchAsync(async (req: Request, res: Response) => {
   const userId = req.user.id;
@@ -27,6 +28,10 @@ const markAllAsRead = catchAsync(async (req: Request, res: Response) => {
     where: { receiverId: userId, isRead: false },
     data: { isRead: true },
   });
+
+  // Emit event to instantly clear the badge in the app
+  const io = getSocketIO();
+  io.to(userId).emit("notification:read_all", { userId });
 
   sendResponse(res, {
     statusCode: httpStatus.OK,

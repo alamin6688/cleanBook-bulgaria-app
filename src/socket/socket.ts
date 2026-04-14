@@ -121,6 +121,15 @@ export const initSocketServer = (httpServer: HttpServer): SocketServer => {
 // Helper to check if a user is online (used by other services)
 export const isUserOnline = (userId: string): boolean => onlineUsers.has(userId);
 
+// Helper to check if a user is in a specific room
+export const isUserInRoom = (userId: string, roomId: string): boolean => {
+  if (!ioInstance) return false;
+  const socketId = onlineUsers.get(userId);
+  if (!socketId) return false;
+  const room = ioInstance.sockets.adapter.rooms.get(roomId);
+  return room ? room.has(socketId) : false;
+};
+
 // Helper to get the IO instance (used by Notification service)
 export const getSocketIO = () => {
   if (!ioInstance) throw new Error("Socket.io not initialized");
