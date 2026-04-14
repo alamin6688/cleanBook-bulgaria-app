@@ -13,6 +13,7 @@ import { ReviewRoutes } from "../modules/Review/review.route";
 import { DashboardRoutes } from "../modules/Cleaner/Dashboard/dashboard.route";
 import { ChatRoutes } from "../modules/Chat/chat.route";
 import { NotificationRoutes } from "../modules/Notification/notification.route";
+import { ContactRoutes } from "../modules/Contact/contact.route";
 
 const router = express.Router();
 
@@ -68,6 +69,10 @@ const moduleRoutes = [
   {
     path: "/notifications",
     route: NotificationRoutes,
+  },
+  {
+    path: "/contact",
+    route: ContactRoutes,
   },
 ];
 
