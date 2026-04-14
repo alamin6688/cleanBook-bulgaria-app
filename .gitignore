@@ -34,3 +34,4 @@ coverage/
 # TypeScript
 *.tsbuildinfo
 
+src/app/lib/firebase-service-account.json

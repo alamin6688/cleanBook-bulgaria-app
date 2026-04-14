@@ -33,8 +33,10 @@ model User {
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
+  fcmToken        String?
   otpTokens       OtpToken[]
   refreshTokens   RefreshToken[]
+  notifications   Notification[]
   customerProfile CustomerProfile?
   cleanerProfile  CleanerProfile?
 
@@ -42,7 +44,7 @@ model User {
   cleanerBookings  Booking[] @relation("CleanerBookings")
 
   customerReviews Review[] @relation("CustomerReviews")
-  
+
   customerChatRooms ChatRoom[] @relation("CustomerChatRooms")
   cleanerChatRooms  ChatRoom[] @relation("CleanerChatRooms")
   sentMessages      Message[]
@@ -98,7 +100,7 @@ model CleanerProfile {
   additionalServiceIds String[] @db.ObjectId
 
   // Stripe Connect
-  stripeAccountId String?          // Stripe Express Account ID (acct_xxx)
+  stripeAccountId String? // Stripe Express Account ID (acct_xxx)
   stripeOnboarded Boolean @default(false) // true once details_submitted && charges_enabled
 
   // Stats
@@ -165,6 +167,21 @@ model ServiceCategory {
   updatedAt DateTime         @updatedAt
   services  CleanerService[]
   bookings  Booking[]
+}
+
+model Notification {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  receiverId String   @db.ObjectId
+  receiver   User     @relation(fields: [receiverId], references: [id])
+  title      String
+  message    String
+  type       NotificationType
+  metadata   Json? // Optional: store bookingId or chatRoomId
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([receiverId])
 }
 
 model AdditionalServiceCategory {
@@ -275,22 +292,23 @@ model RefreshToken {
 
   @@index([userId])
 }
+
 model ChatRoom {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
   customerId String @db.ObjectId
   customer   User   @relation("CustomerChatRooms", fields: [customerId], references: [id])
-  
-  cleanerId  String @db.ObjectId
-  cleaner    User   @relation("CleanerChatRooms", fields: [cleanerId], references: [id])
-  
-  isLocked   Boolean @default(true) 
-  
+
+  cleanerId String @db.ObjectId
+  cleaner   User   @relation("CleanerChatRooms", fields: [cleanerId], references: [id])
+
+  isLocked Boolean @default(true)
+
   lastMessage     String?
   lastMessageTime DateTime?
-  
-  messages   Message[]
-  
+
+  messages Message[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -298,20 +316,30 @@ model ChatRoom {
 }
 
 model Message {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  
+  id String @id @default(auto()) @map("_id") @db.ObjectId
+
   chatRoomId String   @db.ObjectId
   chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
-  
-  senderId   String   @db.ObjectId
-  sender     User     @relation(fields: [senderId], references: [id])
-  
-  content    String
-  
-  isRead     Boolean  @default(false)
-  
+
+  senderId String @db.ObjectId
+  sender   User   @relation(fields: [senderId], references: [id])
+
+  content String
+
+  isRead Boolean @default(false)
+
   isDeletedBySender Boolean @default(false)
-  
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum NotificationType {
+  CHAT_MESSAGE
+  BOOKING_CONFIRMED
+  BOOKING_CANCELLED
+  IN_PROGRESS
+  COMPLETION_REQUESTED
+  COMPLETE
+  RESCHEDULE_REQUESTED
 }

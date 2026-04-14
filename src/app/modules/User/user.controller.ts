@@ -51,7 +51,7 @@ const updateCleanerDetails = catchAsync(async (req: Request, res: Response) => {
 
 const getNearbyCleaners = catchAsync(async (req: Request, res: Response) => {
   const { latitude, longitude, radius } = req.query;
-  
+
   if (!latitude || !longitude) {
     throw new ApiError(httpStatus.BAD_REQUEST, "Latitude and Longitude are required");
   }
@@ -112,6 +112,20 @@ const changePassword = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+const saveFcmToken = catchAsync(async (req: Request, res: Response) => {
+  const userId = req.user.id;
+  const { fcmToken } = req.body;
+
+  const result = await UserService.saveFcmToken(userId, fcmToken);
+
+  sendResponse(res, {
+    statusCode: httpStatus.OK,
+    success: true,
+    message: "FCM token saved successfully",
+    data: result,
+  });
+});
+
 export const UserController = {
   updateLanguage,
   updateLocation,
@@ -122,4 +136,5 @@ export const UserController = {
   getUserById,
   getProfile,
   changePassword,
+  saveFcmToken,
 };

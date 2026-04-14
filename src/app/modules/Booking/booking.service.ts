@@ -4,6 +4,7 @@ import ApiError from "../../../errors/apiError";
 import prisma from "../../../lib/prisma";
 import { PaymentService } from "../Payment/payment.service";
 import { ChatService } from "../Chat/chat.service";
+import { NotificationService } from "../Notification/notification.service";
 import { IBookingSlotQuery, ICreateBooking } from "./booking.interface";
 import { BookingStatus } from "@prisma/client";
 import {
@@ -597,6 +598,15 @@ const confirmBooking = async (bookingId: string, userId: string) => {
 
   await ChatService.syncChatRoomLock(updatedBooking.customerId, updatedBooking.cleanerId);
 
+  // Notify Cleaner
+  await NotificationService.sendNotification({
+    receiverId: updatedBooking.cleanerId,
+    title: "Booking Confirmed!",
+    message: `A new session has been confirmed for ${format(new Date(updatedBooking.date), "MMM d")}.`,
+    type: "BOOKING_CONFIRMED",
+    metadata: { bookingId: updatedBooking.id },
+  });
+
   return {
     ...updatedBooking,
     cleaner: flattenUser(updatedBooking.cleaner),
@@ -1105,6 +1115,15 @@ const requestCompletion = async (
 
   await ChatService.syncChatRoomLock(updatedBooking.customerId, updatedBooking.cleanerId);
 
+  // Notify Customer
+  await NotificationService.sendNotification({
+    receiverId: updatedBooking.customerId,
+    title: "Cleaning Complete!",
+    message: `${updatedBooking.cleaner.cleanerProfile?.displayName} has finished the job. Please review and confirm.`,
+    type: "COMPLETION_REQUESTED",
+    metadata: { bookingId: updatedBooking.id },
+  });
+
   return {
     ...updatedBooking,
     cleaner: flattenUser(updatedBooking.cleaner),
@@ -1166,6 +1185,15 @@ const confirmCompletion = async (bookingId: string, userId: string) => {
   });
 
   await ChatService.syncChatRoomLock(updatedBooking.customerId, updatedBooking.cleanerId);
+
+  // Notify Cleaner
+  await NotificationService.sendNotification({
+    receiverId: updatedBooking.cleanerId,
+    title: "Payment Released!",
+    message: `Payment for booking #${updatedBooking.id.slice(-6)} has been released to your account.`,
+    type: "COMPLETE",
+    metadata: { bookingId: updatedBooking.id },
+  });
 
   return {
     ...updatedBooking,

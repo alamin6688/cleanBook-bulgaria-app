@@ -7,16 +7,18 @@ import { ChatService } from "../app/modules/Chat/chat.service";
 // Track online users: userId -> socketId
 const onlineUsers = new Map<string, string>();
 
+let ioInstance: SocketServer;
 export const initSocketServer = (httpServer: HttpServer): SocketServer => {
   const io = new SocketServer(httpServer, {
     cors: {
-      origin: "*", // Tighten this in production to your frontend URL
+      origin: "*", 
       methods: ["GET", "POST"],
     },
     transports: ["websocket", "polling"],
   });
 
-  // ─── Auth Middleware ────────────────────────────────────────────────────────
+  ioInstance = io;
+
   io.use((socket: Socket, next) => {
     const token =
       socket.handshake.auth?.token || socket.handshake.headers?.authorization?.split(" ")[1];
@@ -32,12 +34,13 @@ export const initSocketServer = (httpServer: HttpServer): SocketServer => {
     }
   });
 
-  // ─── Connection Handler ─────────────────────────────────────────────────────
   io.on("connection", (socket: Socket) => {
     const userId: string = socket.data.userId;
-    console.log(`[Socket] Connected: ${userId}`);
+    
+    // Join a private room for personal notifications
+    socket.join(userId);
+    console.log(`[Socket] Connected: ${userId} (Joined private room)`);
 
-    // Mark user as online
     onlineUsers.set(userId, socket.id);
     io.emit("user:online", { userId });
 
@@ -117,3 +120,9 @@ export const initSocketServer = (httpServer: HttpServer): SocketServer => {
 
 // Helper to check if a user is online (used by other services)
 export const isUserOnline = (userId: string): boolean => onlineUsers.has(userId);
+
+// Helper to get the IO instance (used by Notification service)
+export const getSocketIO = () => {
+  if (!ioInstance) throw new Error("Socket.io not initialized");
+  return ioInstance;
+};

@@ -696,6 +696,13 @@ const changePassword = async (userId: string, data: any) => {
   return { message: "Password changed successfully" };
 };
 
+const saveFcmToken = async (userId: string, fcmToken: string) => {
+  return await prisma.user.update({
+    where: { id: userId },
+    data: { fcmToken },
+  });
+};
+
 export const UserService = {
   updateLanguage,
   updateLocation,
@@ -705,4 +712,5 @@ export const UserService = {
   getUserById,
   updateProfile,
   changePassword,
+  saveFcmToken,
 };

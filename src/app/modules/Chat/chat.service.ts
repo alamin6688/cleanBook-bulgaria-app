@@ -2,6 +2,7 @@ import httpStatus from "http-status";
 import ApiError from "../../../errors/apiError";
 import prisma from "../../../lib/prisma";
 import { BookingStatus } from "@prisma/client";
+import { NotificationService } from "../Notification/notification.service";
 
 // ─────────────────────────────────────────────
 // Ensure chatroom exists or create it
@@ -259,6 +260,21 @@ const saveMessage = async (chatRoomId: string, senderId: string, content: string
       lastMessage: content,
       lastMessageTime: new Date(),
     },
+  });
+
+  // ─── Send Notification ─────────────────────────────────────────────────────
+  const receiverId = room.customerId === senderId ? room.cleanerId : room.customerId;
+  const senderName =
+    message.sender.role === "CLEANER"
+      ? message.sender.cleanerProfile?.displayName
+      : message.sender.customerProfile?.name;
+
+  await NotificationService.sendNotification({
+    receiverId,
+    title: `New message from ${senderName}`,
+    message: content,
+    type: "CHAT_MESSAGE",
+    metadata: { chatRoomId, senderId },
   });
 
   return {

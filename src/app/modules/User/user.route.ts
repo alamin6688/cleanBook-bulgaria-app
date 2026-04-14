@@ -13,6 +13,12 @@ router.get("/:id", auth("CUSTOMER", "CLEANER", "ADMIN"), UserController.getUserB
 // router.get("/cleaners-nearby", auth("CUSTOMER", "CLEANER","ADMIN"), UserController.getNearbyCleaners); 
 
 router.patch(
+  "/save-fcm-token",
+  auth("CUSTOMER", "CLEANER"),
+  UserController.saveFcmToken
+);
+
+router.patch(
   "/update-profile",
   auth("CUSTOMER", "CLEANER", "ADMIN"),
   RequestValidation.validateRequest(UserValidation.saveProfileZodSchema),

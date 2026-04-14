@@ -12,6 +12,7 @@ import { PopularServiceRoutes } from "../modules/PopularService/popularService.r
 import { ReviewRoutes } from "../modules/Review/review.route";
 import { DashboardRoutes } from "../modules/Cleaner/Dashboard/dashboard.route";
 import { ChatRoutes } from "../modules/Chat/chat.route";
+import { NotificationRoutes } from "../modules/Notification/notification.route";
 
 const router = express.Router();
 
@@ -63,6 +64,10 @@ const moduleRoutes = [
   {
     path: "/chat",
     route: ChatRoutes,
+  },
+  {
+    path: "/notifications",
+    route: NotificationRoutes,
   },
 ];
 
