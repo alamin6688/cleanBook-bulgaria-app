@@ -1,5 +1,5 @@
-import { Role, OtpPurpose } from "@prisma/client";
 import { OAuth2Client } from "google-auth-library";
+import { Role, OtpPurpose } from "@prisma/client";
 import httpStatus from "http-status";
 import config from "../../../config";
 import ApiError from "../../../errors/apiError";
@@ -15,11 +15,11 @@ import {
   IChangePasswordInput,
   IForgotPasswordInput,
   ILoginInput,
-  IRefreshTokenInput,
-  IResendOtpInput,
+  // IRefreshTokenInput,
+  // IResendOtpInput,
   IResetPasswordInput,
   IUser,
-  IVerifyEmailInput,
+  // IVerifyEmailInput,
   IVerifyOtpInput,
 } from "./auth.interface";
 
@@ -61,6 +61,48 @@ const createAndSendOtp = async (email: string, purpose: OtpPurpose, userId: stri
   }
 };
 
+const setupUserProfile = async (
+  tx: any,
+  user: { id: string; email: string; role: Role },
+  name: string,
+  profilePhoto?: string
+) => {
+  if (user.role === "CLEANER") {
+    let stripeAccountId: string | undefined;
+    try {
+      stripeAccountId = await createStripeAccount(user.email, user.id);
+    } catch {
+      console.error("[Stripe] Failed to create Connect account for cleaner", user.id);
+    }
+
+    await tx.cleanerProfile.create({
+      data: {
+        userId: user.id,
+        displayName: name,
+        profilePhoto,
+        ...(stripeAccountId ? { stripeAccountId } : {}),
+      },
+    });
+  } else if (user.role === "CUSTOMER") {
+    let stripeCustomerId: string | undefined;
+    try {
+      const customer = await createStripeCustomer(user.email, name);
+      stripeCustomerId = customer.id;
+    } catch {
+      console.error("[Stripe] Failed to create Stripe customer for", user.id);
+    }
+
+    await tx.customerProfile.create({
+      data: {
+        userId: user.id,
+        name: name,
+        profilePhoto,
+        ...(stripeCustomerId ? { stripeCustomerId } : {}),
+      },
+    });
+  }
+};
+
 // ---------------------------------------------------------------------------
 // Service methods
 // ---------------------------------------------------------------------------
@@ -82,59 +124,21 @@ const register = async (userData: IUser) => {
 
   const hashedPassword = await hashItem(userData.password);
 
-    const user = await prisma.$transaction(async (tx) => {
-      const newUser = await tx.user.create({
-        data: {
-          email: userData.email,
-          password: hashedPassword,
-          phone: userData.phone,
-          role: userData.role,
-        },
-        select: { id: true, email: true, role: true, isEmailVerified: true },
-      });
-
-      if (userData.role === "CLEANER") {
-        // Silently create Stripe Express Connect account
-        let stripeAccountId: string | undefined;
-        try {
-          stripeAccountId = await createStripeAccount(userData.email, newUser.id);
-        } catch {
-          // Non-fatal — cleaner can still register; onboarding triggered later
-          console.error("[Stripe] Failed to create Connect account for cleaner", newUser.id);
-        }
-
-        await tx.cleanerProfile.create({
-          data: {
-            userId: newUser.id,
-            displayName: userData.name,
-            ...(stripeAccountId ? { stripeAccountId } : {}),
-          },
-        });
-      } else if (userData.role === "CUSTOMER") {
-        // Silently create Stripe Customer so we can charge them later
-        let stripeCustomerId: string | undefined;
-        try {
-          const customer = await createStripeCustomer(
-            userData.email,
-            userData.name
-            // no payment method at registration time
-          );
-          stripeCustomerId = customer.id;
-        } catch {
-          console.error("[Stripe] Failed to create Stripe customer for", newUser.id);
-        }
-
-        await tx.customerProfile.create({
-          data: {
-            userId: newUser.id,
-            name: userData.name,
-            ...(stripeCustomerId ? { stripeCustomerId } : {}),
-          },
-        });
-      }
-
-      return { ...newUser, name: userData.name };
+  const user = await prisma.$transaction(async (tx) => {
+    const newUser = await tx.user.create({
+      data: {
+        email: userData.email,
+        password: hashedPassword,
+        phone: userData.phone,
+        role: userData.role,
+      },
+      select: { id: true, email: true, role: true, isEmailVerified: true },
     });
+
+    await setupUserProfile(tx, newUser, userData.name);
+
+    return { ...newUser, name: userData.name };
+  });
 
   // Send verification OTP
   await createAndSendOtp(user.email, OtpPurpose.EMAIL_VERIFICATION, user.id);
@@ -202,14 +206,19 @@ const login = async (loginData: ILoginInput) => {
 };
 
 const loginWithGmail = async (idToken: string, role: Role = Role.CUSTOMER) => {
-  const ticket = await client.verifyIdToken({
-    idToken,
-    audience: config.google.client_id,
-  });
+  let ticket;
+  try {
+    ticket = await client.verifyIdToken({
+      idToken,
+      audience: config.google.client_id,
+    });
+  } catch (error) {
+    throw new ApiError(httpStatus.UNAUTHORIZED, "Invalid Google ID token.");
+  }
 
   const googlePayload = ticket.getPayload();
   if (!googlePayload || !googlePayload.email) {
-    throw new ApiError(httpStatus.BAD_REQUEST, "Invalid Google token payload.");
+    throw new ApiError(httpStatus.BAD_REQUEST, "Email not found in Google token.");
   }
 
   const { email, name, picture } = googlePayload;
@@ -224,7 +233,7 @@ const loginWithGmail = async (idToken: string, role: Role = Role.CUSTOMER) => {
   if (!user) {
     isNewUser = true;
 
-    user = await prisma.$transaction(async (tx) => {
+    user = (await prisma.$transaction(async (tx) => {
       const newUser = await tx.user.create({
         data: {
           email,
@@ -233,51 +242,93 @@ const loginWithGmail = async (idToken: string, role: Role = Role.CUSTOMER) => {
         },
       });
 
-      if (role === Role.CLEANER) {
-        await tx.cleanerProfile.create({
-          data: {
-            userId: newUser.id,
-            displayName: name || email.split("@")[0],
-            profilePhoto: picture,
-          },
-        });
-      } else if (role === Role.CUSTOMER) {
-        await tx.customerProfile.create({
-          data: {
-            userId: newUser.id,
-            name: name || email.split("@")[0],
-            profilePhoto: picture,
-          },
-        });
-      }
+      await setupUserProfile(tx, newUser, name || email.split("@")[0], picture);
 
       return await tx.user.findUnique({
         where: { id: newUser.id },
         include: { customerProfile: true, cleanerProfile: true },
       });
-    }) as any;
+    })) as any;
   }
 
   if (!user) {
-    throw new ApiError(httpStatus.INTERNAL_SERVER_ERROR, "Failed to create or retrieve user profile.");
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      "Failed to create or retrieve user profile."
+    );
   }
 
-  if (!user.isActive) {
+  // Ensure isEmailVerified is true for Google users and sync profile info if needed
+  if (
+    !user.isEmailVerified ||
+    (user.role === Role.CUSTOMER &&
+      (!user.customerProfile?.name || !user.customerProfile?.profilePhoto)) ||
+    (user.role === Role.CLEANER &&
+      (!user.cleanerProfile?.displayName || !user.cleanerProfile?.profilePhoto))
+  ) {
+    const userId = user.id;
+    const userRole = user.role;
+    const userCustomerProfile = user.customerProfile;
+    const userCleanerProfile = user.cleanerProfile;
+
+    user = (await prisma.$transaction(async (tx) => {
+      // 1. Update verification status
+      await tx.user.update({
+        where: { id: userId },
+        data: { isEmailVerified: true },
+      });
+
+      // 2. Sync Profile Info
+      if (userRole === Role.CUSTOMER) {
+        await tx.customerProfile.update({
+          where: { userId: userId },
+          data: {
+            name: userCustomerProfile?.name || name || email.split("@")[0],
+            profilePhoto: userCustomerProfile?.profilePhoto || picture,
+          },
+        });
+      } else if (userRole === Role.CLEANER) {
+        await tx.cleanerProfile.update({
+          where: { userId: userId },
+          data: {
+            displayName: userCleanerProfile?.displayName || name || email.split("@")[0],
+            profilePhoto: userCleanerProfile?.profilePhoto || picture,
+          },
+        });
+      }
+
+      return await tx.user.findUnique({
+        where: { id: userId },
+        include: { customerProfile: true, cleanerProfile: true },
+      });
+    })) as any;
+  }
+
+  if (!user) {
+    throw new ApiError(
+      httpStatus.INTERNAL_SERVER_ERROR,
+      "Failed to retrieve user profile after updates."
+    );
+  }
+
+  const validatedUser = user;
+
+  if (!validatedUser.isActive) {
     throw new ApiError(httpStatus.FORBIDDEN, "User account is suspended.");
   }
 
   const payload: ITokenPayload = {
-    id: user.id,
-    email: user.email,
-    role: user.role,
+    id: validatedUser.id,
+    email: validatedUser.email,
+    role: validatedUser.role,
   };
 
   const { accessToken, refreshToken } = jwtHelpers.generateAuthTokens(payload);
 
-  await saveRefreshToken(user.id, refreshToken);
+  await saveRefreshToken(validatedUser.id, refreshToken);
 
   await prisma.user.update({
-    where: { id: user.id },
+    where: { id: validatedUser.id },
     data: { lastLogin: new Date() },
   });
 
@@ -286,23 +337,21 @@ const loginWithGmail = async (idToken: string, role: Role = Role.CUSTOMER) => {
     refreshToken,
     isNewUser,
     user: {
-      id: user.id,
-      email: user.email,
+      id: validatedUser.id,
+      email: validatedUser.email,
       name:
-        user.role === "CLEANER"
-          ? user.cleanerProfile?.displayName
-          : user.customerProfile?.name || user.email.split("@")[0],
-      role: user.role,
+        validatedUser.role === "CLEANER"
+          ? validatedUser.cleanerProfile?.displayName
+          : validatedUser.customerProfile?.name || validatedUser.email.split("@")[0],
+      role: validatedUser.role,
       avatar:
-        user.role === "CLEANER"
-          ? user.cleanerProfile?.profilePhoto
-          : user.customerProfile?.profilePhoto,
-      onboardingCompleted: user.onboardingCompleted,
+        validatedUser.role === "CLEANER"
+          ? validatedUser.cleanerProfile?.profilePhoto
+          : validatedUser.customerProfile?.profilePhoto,
+      onboardingCompleted: validatedUser.onboardingCompleted,
     },
   };
 };
-
-
 
 const logout = async (accessToken: string, refreshToken?: string) => {
   // Remove refresh token from DB
@@ -324,7 +373,11 @@ const resendOtp = async ({ email }: { email: string }) => {
   });
 
   // If there's an active OTP of any type, use its purpose
-  const purpose = latestOtp ? latestOtp.purpose : (user.isEmailVerified ? OtpPurpose.PASSWORD_RESET : OtpPurpose.EMAIL_VERIFICATION);
+  const purpose = latestOtp
+    ? latestOtp.purpose
+    : user.isEmailVerified
+      ? OtpPurpose.PASSWORD_RESET
+      : OtpPurpose.EMAIL_VERIFICATION;
 
   await createAndSendOtp(email, purpose, user.id);
 };
