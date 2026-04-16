@@ -184,6 +184,7 @@ const holdPayment = async (
     currency: "usd",
     customer: stripeCustomerId,
     payment_method: paymentMethodId,
+    payment_method_types: ["card"], // Explicitly support card-based methods (Apple/Google Pay)
     off_session: true,
     confirm: true,
     capture_method: "manual", // ← authorise only; money held

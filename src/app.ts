@@ -55,7 +55,7 @@ app.use(
   })
 );
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
-app.use(express.static("public"));
+app.use(express.static("public", { dotfiles: "allow" }));
 app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
 
 // ---------------------------------------------------------------------------
