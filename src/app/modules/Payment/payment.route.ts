@@ -23,6 +23,10 @@ router.get("/onboarding/link", auth(Role.CLEANER), PaymentController.getOnboardi
 /** GET /payments/dashboard-link  → returns Stripe Express dashboard URL */
 router.get("/dashboard-link", auth(Role.CLEANER), PaymentController.getDashboardLink);
 
+/** Public redirects from Stripe hosted onboarding */
+router.get("/cleaner/stripe/success", PaymentController.onboardingSuccess);
+router.get("/cleaner/stripe/refresh", PaymentController.onboardingRefresh);
+
 // ─────────────────────────────────────────────
 // Bank Account Management (Cleaner)
 // ─────────────────────────────────────────────

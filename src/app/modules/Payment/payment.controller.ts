@@ -290,6 +290,65 @@ const verifyBankAccount = catchAsync(async (req: Request, res: Response) => {
   });
 });
 
+/**
+ * Serves a simple HTML page for successful onboarding.
+ */
+const onboardingSuccessHTML = `
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Onboarding Successful</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f6f9fc; }
+        .card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08); text-align: center; max-width: 400px; width: 90%; }
+        h1 { color: #32325d; margin-bottom: 16px; font-size: 24px; }
+        p { color: #6b7c93; line-height: 1.6; margin-bottom: 24px; }
+        .button { background-color: #635bff; color: white; border: none; padding: 12px 24px; border-radius: 4px; font-weight: 600; cursor: pointer; text-decoration: none; transition: background-color 0.15s ease; }
+        .button:hover { background-color: #5851d8; }
+        .icon { font-size: 48px; margin-bottom: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="icon">✅</div>
+        <h1>Setup Successful!</h1>
+        <p>Your bank account has been connected. You can now receive payments for your services.</p>
+        <p>You may now close this window and return to the app.</p>
+      </div>
+    </body>
+  </html>
+`;
+
+/**
+ * Serves a simple HTML page for refreshing onboarding.
+ */
+const onboardingRefreshHTML = `
+  <!DOCTYPE html>
+  <html>
+    <head>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Refresh Onboarding</title>
+      <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background-color: #f6f9fc; }
+        .card { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 4px 6px rgba(50, 50, 93, 0.11), 0 1px 3px rgba(0, 0, 0, 0.08); text-align: center; max-width: 400px; width: 90%; }
+        h1 { color: #32325d; margin-bottom: 16px; font-size: 24px; }
+        p { color: #6b7c93; line-height: 1.6; margin-bottom: 24px; }
+        .button { background-color: #635bff; color: white; border: none; padding: 12px 24px; border-radius: 4px; font-weight: 600; cursor: pointer; text-decoration: none; transition: background-color 0.15s ease; }
+        .button:hover { background-color: #5851d8; }
+        .icon { font-size: 48px; margin-bottom: 20px; }
+      </style>
+    </head>
+    <body>
+      <div class="card">
+        <div class="icon">🔄</div>
+        <h1>Session Expired</h1>
+        <p>The setup link has expired or was already used. Please go back to the app and click "Complete Bank Setup" again to generate a new link.</p>
+      </div>
+    </body>
+  </html>
+`;
+
 export const PaymentController = {
   getOnboardingLink,
   getDashboardLink,
@@ -305,4 +364,7 @@ export const PaymentController = {
   setDefaultBankAccount,
   deleteBankAccount,
   verifyBankAccount,
+  // HTML Views
+  onboardingSuccess: (req: Request, res: Response) => res.send(onboardingSuccessHTML),
+  onboardingRefresh: (req: Request, res: Response) => res.send(onboardingRefreshHTML),
 };
