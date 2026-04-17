@@ -229,22 +229,6 @@ npm run build
 npm start
 ```
 
-### Docker Setup
-1. **Build and run with Docker Compose**:
-   ```bash
-   docker compose up --build -d
-   ```
-
-2. **Check logs**:
-   ```bash
-   docker compose logs -f app
-   ```
-
-3. **Stop services**:
-   ```bash
-   docker compose down
-   ```
-
 ## Testing
 
 Run the test suite:
